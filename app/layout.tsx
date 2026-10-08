@@ -42,9 +42,10 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="hi"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
+  lang="hi"
+  data-scroll-behavior="smooth"
+  className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+>
       <body className="min-h-full flex flex-col bg-white text-slate-900">
         {children}
       </body>

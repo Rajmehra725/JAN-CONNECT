@@ -1,4 +1,6 @@
+"use client";
 import Head from "next/head";
+import {useState}from "react";
 import {
   ArrowRight,
   FileText,
@@ -9,10 +11,13 @@ import {
   ShieldCheck,
   Bell,
   ChevronDown,
+  X,
 } from "lucide-react";
 
 export default function Home() {
+  const [loginOpen, setLoginOpen] = useState(false);
   return (
+    
     <>
       <Head>
         <title>Jan Connect | Citizen Connectivity Portal</title>
@@ -133,167 +138,183 @@ export default function Home() {
             {/* =================================================
                 LOGIN DROPDOWN
             ================================================== */}
-            <div className="group relative hidden md:block">
+          {/* =================================================
+    LOGIN DROPDOWN
+================================================= */}
+<div className="relative">
 
-              <button
-                type="button"
-                className="flex items-center gap-2 rounded-md bg-blue-900 px-5 py-2.5 font-semibold text-white transition hover:bg-blue-800"
-              >
-                <LogIn size={18} />
+  {/* Login Button */}
+  <button
+    type="button"
+    onClick={() => setLoginOpen(!loginOpen)}
+    className="flex items-center gap-2 rounded-md bg-blue-900 px-4 py-2.5 font-semibold text-white transition hover:bg-blue-800 md:px-5"
+  >
+    <LogIn size={18} />
 
-                Login
+    <span>Login</span>
 
-                <ChevronDown
-                  size={16}
-                  className="transition-transform duration-200 group-hover:rotate-180"
-                />
-              </button>
-
-
-              {/* Dropdown */}
-              <div
-                className="
-                  invisible absolute right-0 top-full z-50 mt-2
-                  w-80 translate-y-2
-                  border border-slate-200
-                  bg-white
-                  opacity-0
-                  shadow-2xl
-                  transition-all duration-200
-                  group-hover:visible
-                  group-hover:translate-y-0
-                  group-hover:opacity-100
-                "
-              >
-
-                {/* Dropdown Header */}
-                <div className="border-b bg-slate-50 px-5 py-4">
-
-                  <p className="text-sm font-bold text-blue-900">
-                    Login to Jan Connect
-                  </p>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Select your account type to continue
-                  </p>
-
-                </div>
+    {loginOpen ? (
+      <X
+        size={16}
+        className="transition-transform duration-200"
+      />
+    ) : (
+      <ChevronDown
+        size={16}
+        className="transition-transform duration-200"
+      />
+    )}
+  </button>
 
 
-                {/* Citizen */}
-                <a
-                  href="/login/citizen"
-                  className="flex items-center gap-4 border-b px-5 py-4 transition hover:bg-blue-50"
-                >
+  {/* =================================================
+      LOGIN MENU
+  ================================================== */}
+  {loginOpen && (
+    <div
+      className="
+        absolute right-0 top-full z-50 mt-2
+        w-[calc(100vw-2rem)] max-w-80
+        overflow-hidden
+        border border-slate-200
+        bg-white
+        shadow-2xl
+      "
+    >
 
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-blue-100 text-blue-900">
-                    <UserPlus size={21} />
-                  </div>
+      {/* Header */}
+      <div className="border-b bg-slate-50 px-5 py-4">
 
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">
-                      Citizen Login
-                    </p>
+        <p className="text-sm font-bold text-blue-900">
+          Login to Jan Connect
+        </p>
 
-                    <p className="mt-1 text-xs text-slate-500">
-                      Login using your mobile number
-                    </p>
-                  </div>
+        <p className="mt-1 text-xs text-slate-500">
+          Select your account type to continue
+        </p>
 
-                  <ArrowRight
-                    size={17}
-                    className="ml-auto shrink-0 text-slate-400"
-                  />
-
-                </a>
-
-
-                {/* Politician */}
-                <a
-                  href="/login/politician"
-                  className="flex items-center gap-4 border-b px-5 py-4 transition hover:bg-orange-50"
-                >
-
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-orange-100 text-orange-700">
-                    <Building2 size={21} />
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">
-                      Politician Login
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-500">
-                      Official representative account
-                    </p>
-                  </div>
-
-                  <ArrowRight
-                    size={17}
-                    className="ml-auto shrink-0 text-slate-400"
-                  />
-
-                </a>
+      </div>
 
 
-                {/* PA / Office Staff */}
-                <a
-                  href="/login/staff"
-                  className="flex items-center gap-4 border-b px-5 py-4 transition hover:bg-green-50"
-                >
+      {/* Citizen */}
+      <a
+        href="/login/citizen"
+        onClick={() => setLoginOpen(false)}
+        className="flex items-center gap-4 border-b px-5 py-4 transition hover:bg-blue-50"
+      >
 
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-green-100 text-green-700">
-                    <FileText size={21} />
-                  </div>
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-blue-100 text-blue-900">
+          <UserPlus size={21} />
+        </div>
 
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">
-                      PA / Office Staff
-                    </p>
+        <div className="min-w-0">
+          <p className="font-semibold text-slate-900">
+            Citizen Login
+          </p>
 
-                    <p className="mt-1 text-xs text-slate-500">
-                      Office staff account
-                    </p>
-                  </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Login using your mobile number
+          </p>
+        </div>
 
-                  <ArrowRight
-                    size={17}
-                    className="ml-auto shrink-0 text-slate-400"
-                  />
+        <ArrowRight
+          size={17}
+          className="ml-auto shrink-0 text-slate-400"
+        />
 
-                </a>
+      </a>
 
 
-                {/* Booth Worker */}
-                <a
-                  href="/login/booth-worker"
-                  className="flex items-center gap-4 px-5 py-4 transition hover:bg-purple-50"
-                >
+      {/* Politician */}
+      <a
+        href="/login/politician"
+        onClick={() => setLoginOpen(false)}
+        className="flex items-center gap-4 border-b px-5 py-4 transition hover:bg-orange-50"
+      >
 
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-700">
-                    <MapPin size={21} />
-                  </div>
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-orange-100 text-orange-700">
+          <Building2 size={21} />
+        </div>
 
-                  <div className="min-w-0">
-                    <p className="font-semibold text-slate-900">
-                      Booth Worker
-                    </p>
+        <div className="min-w-0">
+          <p className="font-semibold text-slate-900">
+            Politician Login
+          </p>
 
-                    <p className="mt-1 text-xs text-slate-500">
-                      Assigned booth account
-                    </p>
-                  </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Official representative account
+          </p>
+        </div>
 
-                  <ArrowRight
-                    size={17}
-                    className="ml-auto shrink-0 text-slate-400"
-                  />
+        <ArrowRight
+          size={17}
+          className="ml-auto shrink-0 text-slate-400"
+        />
 
-                </a>
+      </a>
 
-              </div>
-            </div>
 
+      {/* PA / Office Staff */}
+      <a
+        href="/login/staff"
+        onClick={() => setLoginOpen(false)}
+        className="flex items-center gap-4 border-b px-5 py-4 transition hover:bg-green-50"
+      >
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-green-100 text-green-700">
+          <FileText size={21} />
+        </div>
+
+        <div className="min-w-0">
+          <p className="font-semibold text-slate-900">
+            PA / Office Staff
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Office staff account
+          </p>
+        </div>
+
+        <ArrowRight
+          size={17}
+          className="ml-auto shrink-0 text-slate-400"
+        />
+
+      </a>
+
+
+      {/* Booth Worker */}
+      <a
+        href="/login/booth-worker"
+        onClick={() => setLoginOpen(false)}
+        className="flex items-center gap-4 px-5 py-4 transition hover:bg-purple-50"
+      >
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-700">
+          <MapPin size={21} />
+        </div>
+
+        <div className="min-w-0">
+          <p className="font-semibold text-slate-900">
+            Booth Worker
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Assigned booth account
+          </p>
+        </div>
+
+        <ArrowRight
+          size={17}
+          className="ml-auto shrink-0 text-slate-400"
+        />
+
+      </a>
+
+    </div>
+  )}
+
+</div>
           </div>
         </header>
 
