@@ -6,16 +6,31 @@
 
 function cleanBase(url?: string): string {
   if (!url) return "";
-  return url.trim().replace(/\/+$/, "");
+  // Strip duplicate internal slashes except after http: or https:
+  const normalized = url.trim().replace(/([^:])\/\/+/g, "$1/");
+  return normalized.replace(/\/+$/, "");
 }
 
-const RAW_BASE =
-  process.env.NEXT_PUBLIC_API_BASE_URL ||
-  (process.env.NEXT_PUBLIC_API_URL
-    ? `${cleanBase(process.env.NEXT_PUBLIC_API_URL)}/api/v1`
-    : "https://jan-connect-backend.onrender.com/api/v1");
+export function getApiBase(): string {
+  if (typeof window !== "undefined") {
+    // In local development, use same-origin proxy to eliminate CORS, CORP and third-party cookie restrictions
+    const host = window.location.hostname;
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "/api/v1";
+    }
+  }
 
-const V1 = cleanBase(RAW_BASE);
+  const envBase = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (envBase) {
+    return cleanBase(envBase);
+  }
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return `${cleanBase(process.env.NEXT_PUBLIC_API_URL)}/api/v1`;
+  }
+  return "https://jan-connect-backend.onrender.com/api/v1";
+}
+
+const V1 = getApiBase();
 
 export interface ApiResponse<T = unknown> {
   success: boolean;
@@ -166,11 +181,15 @@ export interface SchemeItem {
 }
 
 function buildUrl(endpoint: string): string {
+  let fullUrl: string;
   if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
-    return endpoint;
+    fullUrl = endpoint;
+  } else {
+    const base = getApiBase();
+    const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    fullUrl = `${base}${cleanEndpoint}`;
   }
-  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  return `${V1}${cleanEndpoint}`;
+  return fullUrl.replace(/([^:])\/\/+/g, "$1/");
 }
 
 async function request<T>(
