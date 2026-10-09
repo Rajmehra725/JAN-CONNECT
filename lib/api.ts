@@ -1,27 +1,147 @@
 /**
  * Centralized API Client for Jan Connect
  * Provides typed request/response methods for frontend-to-backend communication.
+ * Supports environment variable configuration via NEXT_PUBLIC_API_BASE_URL or NEXT_PUBLIC_API_URL.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const V1 =
+  process.env.NEXT_PUBLIC_API_BASE_URL ||
+  (process.env.NEXT_PUBLIC_API_URL
+    ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1`
+    : "https://jan-connect-backend.onrender.com//api/v1");
 
 export interface ApiResponse<T = unknown> {
   success: boolean;
   message?: string;
   data?: T;
+  code?: string;
   errors?: Array<{ field?: string; message: string }>;
+}
+
+export interface CaptchaChallenge {
+  challengeId: string;
+  question: string;
+  expiresInSeconds: number;
+}
+
+export interface UserProfile {
+  _id: string;
+  fullName: string;
+  mobileNumber: string;
+  alternateMobile?: string;
+  role: "SUPER_ADMIN" | "POLITICIAN" | "PA_STAFF" | "BOOTH_WORKER" | "CITIZEN";
+  accountStatus: "ACTIVE" | "SUSPENDED" | "DEACTIVATED";
+  email?: string;
+  gender?: "MALE" | "FEMALE" | "OTHER";
+  occupation?: string;
+  address?: string;
+  villageMohalla?: string;
+  wardNumber?: string;
+  boothNumber?: string;
+  district?: string;
+  assemblyConstituency?: string;
+  pincode?: string;
+  constituencyId?: { _id: string; name: string; code?: string };
+  wardId?: { _id: string; name?: string; wardNumber: string };
+  boothId?: { _id: string; name?: string; boothNumber: string };
+  createdAt?: string;
+}
+
+export interface ComplaintItem {
+  _id: string;
+  trackingId: string;
+  citizenId: { _id: string; fullName: string; mobileNumber: string };
+  category: string;
+  subject: string;
+  description: string;
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  status:
+    | "SUBMITTED"
+    | "UNDER_REVIEW"
+    | "ASSIGNED"
+    | "IN_PROGRESS"
+    | "WAITING_FOR_INFORMATION"
+    | "RESOLVED"
+    | "REJECTED"
+    | "REOPENED";
+  constituencyId?: { _id: string; name: string };
+  wardId?: { _id: string; wardNumber: string };
+  boothId?: { _id: string; boothNumber: string };
+  assignedUserId?: { _id: string; fullName: string; role: string };
+  assignedOfficeId?: { _id: string; name: string; address?: string };
+  location?: string;
+  resolutionDetails?: string;
+  resolutionDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ComplaintUpdateItem {
+  _id: string;
+  complaintId: string;
+  authorId: { _id: string; fullName: string; role: string };
+  authorRole: string;
+  statusBefore?: string;
+  statusAfter?: string;
+  updateText: string;
+  isInternal: boolean;
+  createdAt: string;
+}
+
+export interface TaskItem {
+  _id: string;
+  title: string;
+  description: string;
+  assignedWorkerId: { _id: string; fullName: string; mobileNumber: string };
+  createdById: { _id: string; fullName: string; role: string };
+  priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+  status: "PENDING" | "ACCEPTED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
+  dueDate?: string;
+  completionNotes?: string;
+  createdAt: string;
+}
+
+export interface AttendanceRecord {
+  _id: string;
+  workerId: { _id: string; fullName: string; mobileNumber: string };
+  attendanceDate: string;
+  checkInTime: string;
+  checkOutTime?: string;
+  status: "PRESENT" | "ABSENT" | "HALF_DAY" | "LEAVE";
+  location?: string;
+  fieldActivity?: string;
+}
+
+export interface DashboardSummary {
+  complaints: {
+    total: number;
+    submitted: number;
+    inProgress: number;
+    resolved: number;
+    urgent: number;
+  };
+  users: {
+    citizens: number;
+    boothWorkers: number;
+    staff: number;
+  };
+  tasks: {
+    total: number;
+    completed: number;
+    pending: number;
+  };
+  todayAttendance: number;
 }
 
 export interface NoticeItem {
   _id: string;
   title: string;
-  description?: string;
-  category?: string;
+  content: string;
+  category: string;
   noticeType?: string;
-  publishedAt?: string;
   isImportant?: boolean;
-  status?: string;
   attachmentUrl?: string;
+  publishedAt?: string;
   createdAt?: string;
 }
 
@@ -35,57 +155,28 @@ export interface SchemeItem {
   applicationInstructions?: string;
   department?: string;
   officialUrl?: string;
-  status?: string;
-  createdAt?: string;
-}
-
-export interface ContactMessagePayload {
-  name: string;
-  mobile: string;
-  email?: string;
-  subject: string;
-  message: string;
-}
-
-export interface CitizenRegistrationPayload {
-  fullName: string;
-  mobile: string;
-  alternateMobile?: string;
-  dateOfBirth?: string;
-  gender?: string;
-  occupation?: string;
-  email?: string;
-  preferredLanguage?: string;
-  address: string;
-  villageMohalla: string;
-  wardNumber?: string;
-  boothNumber?: string;
-  district: string;
-  assemblyConstituency: string;
-  pincode: string;
-  gpsLocation?: string;
-  familyId?: string;
-  emergencyContact: string;
+  verified?: boolean;
 }
 
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
-  const url = `${API_BASE_URL}${endpoint}`;
-  const defaultHeaders: HeadersInit = {
-    "Content-Type": "application/json",
-  };
+  const url = endpoint.startsWith("http") ? endpoint : `${V1}${endpoint}`;
+  const defaultHeaders: Record<string, string> = {};
+
+  if (!(options.body instanceof FormData)) {
+    defaultHeaders["Content-Type"] = "application/json";
+  }
 
   try {
     const res = await fetch(url, {
       ...options,
       headers: {
         ...defaultHeaders,
-        ...options.headers,
+        ...(options.headers as Record<string, string>),
       },
-      // Include cookies for session/HttpOnly token authentication
-      credentials: "include",
+      credentials: "include", // HttpOnly session cookie
     });
 
     const data = await res.json().catch(() => ({}));
@@ -93,7 +184,8 @@ async function request<T>(
     if (!res.ok) {
       return {
         success: false,
-        message: data.message || `HTTP ${res.status}: Request failed`,
+        message: data.message || `HTTP ${res.status}: अनुरोध विफल रहा।`,
+        code: data.code,
         errors: data.errors,
       };
     }
@@ -101,7 +193,7 @@ async function request<T>(
     return {
       success: true,
       message: data.message,
-      data: data.data || data,
+      data: data.data !== undefined ? data.data : data,
     };
   } catch (error) {
     return {
@@ -109,106 +201,318 @@ async function request<T>(
       message:
         error instanceof Error
           ? error.message
-          : "Network error: Unable to connect to server",
+          : "सर्वर से संपर्क स्थापित नहीं हो सका।",
     };
   }
 }
 
 // ==========================================
-// AUTH API
+// AUTH & CAPTCHA API
 // ==========================================
 export const authApi = {
-  sendCitizenOtp: (mobile: string) =>
-    request<{ expiresAt: string }>("/api/auth/citizen/send-otp", {
+  getCaptcha: () => request<CaptchaChallenge>("/auth/captcha"),
+
+  registerCitizen: (payload: Record<string, unknown>) =>
+    request<{ user: UserProfile }>("/auth/register", {
       method: "POST",
-      body: JSON.stringify({ mobile }),
+      body: JSON.stringify(payload),
     }),
 
-  verifyCitizenOtp: (mobile: string, otp: string) =>
-    request<{ user: unknown; token?: string }>("/api/auth/citizen/verify-otp", {
+  login: (
+    mobileNumber: string,
+    password: string,
+    captchaId?: string,
+    captchaAnswer?: string,
+    expectedRole?: string
+  ) =>
+    request<{ user: UserProfile; token: string }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ mobile, otp }),
-    }),
-
-  politicianLogin: (identifier: string, password: string) =>
-    request<{ user: unknown }>("/api/auth/politician/login", {
-      method: "POST",
-      body: JSON.stringify({ identifier, password }),
-    }),
-
-  staffLogin: (identifier: string, password: string) =>
-    request<{ user: unknown }>("/api/auth/staff/login", {
-      method: "POST",
-      body: JSON.stringify({ identifier, password }),
-    }),
-
-  boothWorkerLogin: (identifier: string, password: string) =>
-    request<{ user: unknown }>("/api/auth/booth-worker/login", {
-      method: "POST",
-      body: JSON.stringify({ identifier, password }),
+      body: JSON.stringify({
+        mobileNumber,
+        password,
+        captchaId,
+        captchaAnswer,
+        expectedRole,
+      }),
     }),
 
   logout: () =>
-    request("/api/auth/logout", {
+    request("/auth/logout", {
       method: "POST",
     }),
 
-  getMe: () => request<{ user: unknown }>("/api/auth/me"),
+  getMe: () => request<{ user: UserProfile }>("/auth/me"),
+
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+};
+
+// ==========================================
+// COMPLAINTS API
+// ==========================================
+export const complaintsApi = {
+  create: (payload: Record<string, unknown>) =>
+    request<ComplaintItem>("/complaints", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getAll: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{ complaints: ComplaintItem[]; pagination: unknown }>(
+      `/complaints${qs}`
+    );
+  },
+
+  track: (trackingId: string) =>
+    request<{ complaint: ComplaintItem; timeline: ComplaintUpdateItem[] }>(
+      `/complaints/track/${encodeURIComponent(trackingId)}`
+    ),
+
+  getById: (id: string) =>
+    request<{ complaint: ComplaintItem; timeline: ComplaintUpdateItem[] }>(
+      `/complaints/${id}`
+    ),
+
+  addUpdate: (
+    id: string,
+    payload: {
+      updateText: string;
+      newStatus?: string;
+      isInternal?: boolean;
+    }
+  ) =>
+    request<ComplaintUpdateItem>(`/complaints/${id}/updates`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  assign: (
+    id: string,
+    payload: { assignedUserId?: string; assignedOfficeId?: string }
+  ) =>
+    request<ComplaintItem>(`/complaints/${id}/assign`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+};
+
+// ==========================================
+// TASKS API
+// ==========================================
+export const tasksApi = {
+  create: (payload: Record<string, unknown>) =>
+    request<TaskItem>("/tasks", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getAll: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{ tasks: TaskItem[]; pagination: unknown }>(`/tasks${qs}`);
+  },
+
+  getById: (id: string) => request<TaskItem>(`/tasks/${id}`),
+
+  update: (
+    id: string,
+    payload: { status?: string; completionNotes?: string }
+  ) =>
+    request<TaskItem>(`/tasks/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+};
+
+// ==========================================
+// ATTENDANCE API
+// ==========================================
+export const attendanceApi = {
+  checkIn: (payload: { location?: string; fieldActivity?: string }) =>
+    request<AttendanceRecord>("/attendance/check-in", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  checkOut: (payload: { fieldActivity?: string }) =>
+    request<AttendanceRecord>("/attendance/check-out", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getMy: () => request<AttendanceRecord[]>("/attendance/my"),
+
+  getAll: (date?: string) => {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : "";
+    return request<AttendanceRecord[]>(`/attendance/all${qs}`);
+  },
+};
+
+// ==========================================
+// USER MANAGEMENT API (Super Admin / Privileged)
+// ==========================================
+export const usersApi = {
+  createUser: (payload: Record<string, unknown>) =>
+    request<{ user: UserProfile }>("/users", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getAll: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{ users: UserProfile[]; pagination: { total: number; page: number; totalPages: number } }>(
+      `/users${qs}`
+    );
+  },
+
+  getById: (id: string) => request<{ user: UserProfile }>(`/users/${id}`),
+
+  update: (id: string, payload: Record<string, unknown>) =>
+    request<{ user: UserProfile }>(`/users/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  updateStatus: (id: string, status: "ACTIVE" | "SUSPENDED" | "DEACTIVATED") =>
+    request<{ user: UserProfile }>(`/users/${id}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+};
+
+// ==========================================
+// GEOGRAPHY API
+// ==========================================
+export const geographyApi = {
+  getConstituencies: () => request<Array<{ _id: string; name: string; district: string; state: string }>>("/geography/constituencies"),
+
+  createConstituency: (payload: Record<string, unknown>) =>
+    request("/geography/constituencies", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  getWards: (constituencyId?: string) => {
+    const qs = constituencyId ? `?constituencyId=${encodeURIComponent(constituencyId)}` : "";
+    return request<Array<{ _id: string; wardNumber: string; name?: string }>>(`/geography/wards${qs}`);
+  },
+
+  getBooths: (constituencyId?: string, wardId?: string) => {
+    const params = new URLSearchParams();
+    if (constituencyId) params.append("constituencyId", constituencyId);
+    if (wardId) params.append("wardId", wardId);
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return request<Array<{ _id: string; boothNumber: string; name?: string }>>(`/geography/booths${qs}`);
+  },
+
+  getOffices: (constituencyId?: string) => {
+    const qs = constituencyId ? `?constituencyId=${encodeURIComponent(constituencyId)}` : "";
+    return request<Array<{ _id: string; name: string; address?: string }>>(`/geography/offices${qs}`);
+  },
+};
+
+// ==========================================
+// REPORTS & SUMMARY API
+// ==========================================
+export const reportsApi = {
+  getSummary: () => request<DashboardSummary>("/reports/summary"),
+
+  getExportUrl: () => `${V1}/reports/export/complaints`,
 };
 
 // ==========================================
 // NOTICES API
 // ==========================================
 export const noticesApi = {
-  getAll: (params?: { category?: string; search?: string; page?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.category) query.append("category", params.category);
-    if (params?.search) query.append("search", params.search);
-    if (params?.page) query.append("page", String(params.page));
-    const qs = query.toString() ? `?${query.toString()}` : "";
-    return request<{ notices: NoticeItem[]; total: number }>(`/api/notices${qs}`);
+  getAll: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{ notices: NoticeItem[]; pagination: unknown }>(`/notices${qs}`);
   },
 
-  getById: (id: string) =>
-    request<{ notice: NoticeItem }>(`/api/notices/${id}`),
+  getById: (id: string) => request<NoticeItem>(`/notices/${id}`),
+
+  create: (payload: Record<string, unknown>) =>
+    request<NoticeItem>("/notices", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
 
 // ==========================================
 // SCHEMES API
 // ==========================================
 export const schemesApi = {
-  getAll: (params?: { category?: string; search?: string }) => {
-    const query = new URLSearchParams();
-    if (params?.category) query.append("category", params.category);
-    if (params?.search) query.append("search", params.search);
-    const qs = query.toString() ? `?${query.toString()}` : "";
-    return request<{ schemes: SchemeItem[]; total: number }>(`/api/schemes${qs}`);
+  getAll: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{ schemes: SchemeItem[]; pagination: unknown }>(`/schemes${qs}`);
   },
 
-  getById: (id: string) =>
-    request<{ scheme: SchemeItem }>(`/api/schemes/${id}`),
+  getById: (id: string) => request<SchemeItem>(`/schemes/${id}`),
+
+  create: (payload: Record<string, unknown>) =>
+    request<SchemeItem>("/schemes", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+};
+
+// ==========================================
+// EVENTS API
+// ==========================================
+export const eventsApi = {
+  getAll: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<Array<{ _id: string; title: string; eventDate: string; venue: string }>>(`/events${qs}`);
+  },
+
+  getById: (id: string) => request(`/events/${id}`),
+
+  create: (payload: Record<string, unknown>) =>
+    request("/events", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };
 
 // ==========================================
 // CONTACT API
 // ==========================================
 export const contactApi = {
-  sendMessage: (payload: ContactMessagePayload) =>
-    request<{ messageId: string }>("/api/contact", {
+  submit: (payload: Record<string, unknown>) =>
+    request<{ id: string }>("/contact", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
 };
 
 // ==========================================
-// USERS / REGISTRATION API
+// NOTIFICATIONS API
 // ==========================================
-export const userApi = {
-  registerCitizen: (payload: CitizenRegistrationPayload) =>
-    request<{ userId: string }>("/api/users/register", {
+export const notificationsApi = {
+  getMy: () =>
+    request<{ notifications: unknown[]; unreadCount: number }>("/notifications"),
+
+  markAsRead: (id: string) =>
+    request(`/notifications/${id}/read`, { method: "PATCH" }),
+
+  markAllAsRead: () => request("/notifications/read-all", { method: "PATCH" }),
+};
+
+// ==========================================
+// UPLOADS API
+// ==========================================
+export const uploadsApi = {
+  uploadFile: (formData: FormData) =>
+    request<{ assetId: string; url: string; publicId: string }>("/uploads", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: formData,
     }),
 
-  getProfile: () => request<{ profile: unknown }>("/api/users/profile"),
+  getStatus: () =>
+    request<{ configured: boolean; maxFileSize: string; supportedFormats: string[] }>(
+      "/uploads/status"
+    ),
 };

@@ -7,6 +7,7 @@ import {
   Building2,
   ChevronDown,
   LogIn,
+  LogOut,
   Menu,
   X,
   UserPlus,
@@ -15,7 +16,10 @@ import {
   ArrowRight,
   ShieldCheck,
   Languages,
+  User,
+  LayoutDashboard,
 } from "lucide-react";
+import { useAuth, getDashboardPath } from "@/lib/auth-context";
 
 const NAV_ITEMS = [
   { href: "/", label: "होम", labelEn: "Home" },
@@ -30,7 +34,7 @@ const LOGIN_ROLES = [
   {
     title: "नागरिक लॉगिन",
     titleEn: "Citizen Login",
-    desc: "मोबाइल नंबर और OTP के माध्यम से प्रवेश",
+    desc: "मोबाइल नंबर और पासवर्ड के माध्यम से प्रवेश",
     href: "/login/citizen",
     icon: UserPlus,
     color: "bg-blue-100 text-blue-900 border-blue-200",
@@ -63,6 +67,7 @@ const LOGIN_ROLES = [
 
 export default function Header() {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loginDropdownOpen, setLoginDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -78,7 +83,6 @@ export default function Header() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-
   const isActive = (href: string) => {
     if (href === "/") {
       return pathname === "/";
@@ -86,11 +90,25 @@ export default function Header() {
     return pathname.startsWith(href);
   };
 
+  const getRoleBadge = (role: string) => {
+    switch (role) {
+      case "SUPER_ADMIN":
+        return <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-bold text-red-800">सुपर एडमिन</span>;
+      case "POLITICIAN":
+        return <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-800">जनप्रतिनिधि</span>;
+      case "PA_STAFF":
+        return <span className="rounded bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-800">स्टाफ</span>;
+      case "BOOTH_WORKER":
+        return <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800">बूथ कार्यकर्ता</span>;
+      case "CITIZEN":
+      default:
+        return <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-800">नागरिक</span>;
+    }
+  };
+
   return (
     <>
-      {/* =====================================================
-          TOP BAR (Government-style announcement / language bar)
-      ====================================================== */}
+      {/* Top Bar */}
       <div className="border-b border-slate-800 bg-slate-900 text-slate-200 text-xs sm:text-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-2">
           <div className="flex items-center gap-2">
@@ -112,12 +130,10 @@ export default function Header() {
         </div>
       </div>
 
-      {/* =====================================================
-          MAIN HEADER / NAVBAR
-      ====================================================== */}
+      {/* Main Navbar */}
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur-md shadow-xs">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-          {/* Logo Branding */}
+          {/* Logo */}
           <Link href="/" className="group flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-blue-900 text-white shadow-sm transition group-hover:bg-blue-800">
               <ShieldCheck size={24} className="text-orange-400" />
@@ -138,7 +154,7 @@ export default function Header() {
             </div>
           </Link>
 
-          {/* Desktop Navigation Links */}
+          {/* Desktop Nav Links */}
           <nav className="hidden items-center gap-1 lg:flex" aria-label="मुख्य नेविगेशन">
             {NAV_ITEMS.map((item) => {
               const active = isActive(item.href);
@@ -163,84 +179,141 @@ export default function Header() {
 
           {/* Desktop Right Actions */}
           <div className="hidden items-center gap-3 sm:flex">
-            <Link
-              href="/register"
-              className="inline-flex items-center gap-1.5 rounded-md border border-orange-600 bg-orange-600 px-3.5 py-2 text-sm font-semibold text-white shadow-xs transition hover:bg-orange-700"
-            >
-              <UserPlus size={16} />
-              <span>पंजीकरण</span>
-            </Link>
-
-            {/* Login Role Dropdown */}
-            <div className="relative" ref={dropdownRef}>
-              <button
-                type="button"
-                onClick={() => setLoginDropdownOpen(!loginDropdownOpen)}
-                aria-expanded={loginDropdownOpen}
-                className="inline-flex items-center gap-2 rounded-md bg-blue-900 px-4 py-2 text-sm font-semibold text-white shadow-xs transition hover:bg-blue-800"
-              >
-                <LogIn size={16} />
-                <span>लॉगिन</span>
-                <ChevronDown
-                  size={15}
-                  className={`transition-transform duration-200 ${
-                    loginDropdownOpen ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
-
-              {loginDropdownOpen && (
-                <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border border-slate-200 bg-white p-2 shadow-2xl animate-in fade-in slide-in-from-top-2">
-                  <div className="border-b border-slate-100 px-3 py-2.5">
-                    <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                      खाता प्रकार चुनें / Select Role
-                    </p>
-                  </div>
-
-                  <div className="mt-1 space-y-1">
-                    {LOGIN_ROLES.map((role) => {
-                      const Icon = role.icon;
-                      return (
-                        <Link
-                          key={role.href}
-                          href={role.href}
-                          onClick={() => setLoginDropdownOpen(false)}
-                          className="flex items-start gap-3 rounded-md p-2.5 transition hover:bg-slate-50"
-                        >
-                          <div
-                            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${role.color}`}
-                          >
-                            <Icon size={18} />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between">
-                              <p className="text-sm font-bold text-slate-900">
-                                {role.title}
-                              </p>
-                              <ArrowRight size={13} className="text-slate-400" />
-                            </div>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              {role.desc}
-                            </p>
-                          </div>
-                        </Link>
-                      );
-                    })}
-                  </div>
+            {user ? (
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-1.5 bg-slate-50">
+                  <User size={15} className="text-slate-600" />
+                  <span className="text-xs font-bold text-slate-900 truncate max-w-[120px]">
+                    {user.fullName}
+                  </span>
+                  {getRoleBadge(user.role)}
                 </div>
-              )}
-            </div>
+
+                <Link
+                  href={getDashboardPath(user.role)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-900 px-3.5 py-2 text-xs font-bold text-white shadow-xs transition hover:bg-blue-800"
+                >
+                  <LayoutDashboard size={14} />
+                  <span>डैशबोर्ड</span>
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
+                  title="लॉगआउट करें"
+                >
+                  <LogOut size={14} className="text-rose-600" />
+                  <span>लॉगआउट</span>
+                </button>
+              </div>
+            ) : (
+              <>
+                <Link
+                  href="/register"
+                  className="inline-flex items-center gap-1.5 rounded-md border border-orange-600 bg-orange-600 px-3.5 py-2 text-sm font-semibold text-white shadow-xs transition hover:bg-orange-700"
+                >
+                  <UserPlus size={16} />
+                  <span>पंजीकरण</span>
+                </Link>
+
+                {/* Login Role Dropdown */}
+                <div className="relative" ref={dropdownRef}>
+                  <div className="inline-flex rounded-md shadow-xs">
+                    <Link
+                      href="/login"
+                      className="inline-flex items-center gap-2 rounded-l-md bg-blue-900 px-3.5 py-2 text-sm font-semibold text-white transition hover:bg-blue-800"
+                    >
+                      <LogIn size={16} />
+                      <span>लॉगिन</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => setLoginDropdownOpen(!loginDropdownOpen)}
+                      aria-expanded={loginDropdownOpen}
+                      className="inline-flex items-center rounded-r-md border-l border-blue-800 bg-blue-900 px-2 py-2 text-white hover:bg-blue-800"
+                      title="पोर्टल चुनें"
+                    >
+                      <ChevronDown
+                        size={15}
+                        className={`transition-transform duration-200 ${
+                          loginDropdownOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  {loginDropdownOpen && (
+                    <div className="absolute right-0 top-full z-50 mt-2 w-80 rounded-lg border border-slate-200 bg-white p-2 shadow-2xl animate-in fade-in slide-in-from-top-2">
+                      <div className="border-b border-slate-100 px-3 py-2.5 flex items-center justify-between">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                          खाता प्रकार चुनें / Select Role
+                        </p>
+                        <Link
+                          href="/login"
+                          onClick={() => setLoginDropdownOpen(false)}
+                          className="text-[11px] font-bold text-orange-600 hover:underline"
+                        >
+                          मुख्य लॉगिन →
+                        </Link>
+                      </div>
+
+                      <div className="mt-1 space-y-1">
+                        {LOGIN_ROLES.map((role) => {
+                          const Icon = role.icon;
+                          return (
+                            <Link
+                              key={role.href}
+                              href={role.href}
+                              onClick={() => setLoginDropdownOpen(false)}
+                              className="flex items-start gap-3 rounded-md p-2.5 transition hover:bg-slate-50"
+                            >
+                              <div
+                                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border ${role.color}`}
+                              >
+                                <Icon size={18} />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-sm font-bold text-slate-900">
+                                    {role.title}
+                                  </p>
+                                  <ArrowRight size={13} className="text-slate-400" />
+                                </div>
+                                <p className="text-[11px] text-slate-500 truncate">
+                                  {role.desc}
+                                </p>
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Mobile Menu & Quick Actions Toggle */}
+          {/* Mobile Menu Toggle */}
           <div className="flex items-center gap-2 lg:hidden">
-            <Link
-              href="/register"
-              className="inline-flex items-center gap-1 rounded bg-orange-600 px-2.5 py-1.5 text-xs font-semibold text-white sm:hidden"
-            >
-              <UserPlus size={14} />
-              <span>पंजीयन</span>
-            </Link>
+            {user ? (
+              <Link
+                href={getDashboardPath(user.role)}
+                className="inline-flex items-center gap-1 rounded bg-blue-900 px-2.5 py-1.5 text-xs font-bold text-white"
+              >
+                <LayoutDashboard size={13} />
+                <span>डैशबोर्ड</span>
+              </Link>
+            ) : (
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-1 rounded bg-blue-900 px-2.5 py-1.5 text-xs font-bold text-white"
+              >
+                <LogIn size={13} />
+                <span>लॉगिन</span>
+              </Link>
+            )}
 
             <button
               type="button"
@@ -253,11 +326,32 @@ export default function Header() {
           </div>
         </div>
 
-        {/* =====================================================
-            MOBILE RESPONSIVE DRAWER / ACCORDION
-        ====================================================== */}
+        {/* Mobile Responsive Drawer */}
         {mobileMenuOpen && (
           <div className="border-b border-slate-200 bg-white px-4 py-4 lg:hidden animate-in fade-in">
+            {user && (
+              <div className="mb-4 p-3 bg-slate-50 rounded-lg border border-slate-200 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-slate-900">{user.fullName}</p>
+                  <p className="text-[10px] text-slate-500">+91 {user.mobileNumber}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {getRoleBadge(user.role)}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      logout();
+                    }}
+                    className="p-1 text-rose-600 hover:bg-rose-50 rounded"
+                    title="लॉगआउट"
+                  >
+                    <LogOut size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Mobile Nav Links */}
             <div className="space-y-1">
               <p className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -283,50 +377,50 @@ export default function Header() {
               })}
             </div>
 
-            {/* Mobile Login Links */}
+            {/* Mobile User / Auth Links */}
             <div className="mt-4 border-t border-slate-100 pt-4">
-              <p className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
-                लॉगिन विकल्प / Login Options
-              </p>
-              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {LOGIN_ROLES.map((role) => {
-                  const Icon = role.icon;
-                  return (
-                    <Link
-                      key={role.href}
-                      href={role.href}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className="flex items-center gap-3 rounded-md border border-slate-200 bg-slate-50/50 p-2.5 text-left transition hover:bg-slate-100"
-                    >
-                      <div
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded ${role.color}`}
-                      >
-                        <Icon size={16} />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-slate-900">
-                          {role.title}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          {role.titleEn}
-                        </p>
-                      </div>
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Mobile Registration Shortcut */}
-            <div className="mt-4 border-t border-slate-100 pt-3">
-              <Link
-                href="/register"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex w-full items-center justify-center gap-2 rounded-md bg-orange-600 py-2.5 text-sm font-bold text-white shadow-xs hover:bg-orange-700"
-              >
-                <UserPlus size={16} />
-                <span>नया नागरिक पंजीकरण करें</span>
-              </Link>
+              {user ? (
+                <div className="space-y-2">
+                  <Link
+                    href={getDashboardPath(user.role)}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-900 py-2.5 text-sm font-bold text-white shadow-xs"
+                  >
+                    <LayoutDashboard size={16} />
+                    <span>डैशबोर्ड खोलें</span>
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      logout();
+                    }}
+                    className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    <LogOut size={16} className="text-rose-600" />
+                    <span>लॉगआउट करें</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Link
+                    href="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-900 py-2.5 text-sm font-bold text-white shadow-xs hover:bg-blue-800"
+                  >
+                    <LogIn size={16} />
+                    <span>पोर्टल लॉगिन करें</span>
+                  </Link>
+                  <Link
+                    href="/register"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="flex w-full items-center justify-center gap-2 rounded-md bg-orange-600 py-2.5 text-sm font-bold text-white shadow-xs hover:bg-orange-700"
+                  >
+                    <UserPlus size={16} />
+                    <span>नया नागरिक पंजीकरण करें</span>
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         )}
