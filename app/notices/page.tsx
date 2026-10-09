@@ -52,12 +52,14 @@ const DEFAULT_NOTICES: Notice[] = [
 
 async function getNotices(): Promise<Notice[]> {
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-    if (!apiUrl) {
-      return DEFAULT_NOTICES;
-    }
+    const rawUrl =
+      process.env.NEXT_PUBLIC_API_BASE_URL ||
+      (process.env.NEXT_PUBLIC_API_URL
+        ? `${process.env.NEXT_PUBLIC_API_URL.replace(/\/+$/, "")}/api/v1`
+        : "https://jan-connect-backend.onrender.com/api/v1");
+    const cleanUrl = rawUrl.replace(/\/+$/, "");
 
-    const response = await fetch(`${apiUrl}/api/notices`, {
+    const response = await fetch(`${cleanUrl}/notices`, {
       next: { revalidate: 60 },
     });
 
@@ -66,8 +68,12 @@ async function getNotices(): Promise<Notice[]> {
     }
 
     const data = await response.json();
-    if (data.notices && Array.isArray(data.notices) && data.notices.length > 0) {
-      return data.notices;
+    const list =
+      data?.data?.notices ||
+      data?.notices ||
+      (Array.isArray(data?.data) ? data.data : null);
+    if (list && Array.isArray(list) && list.length > 0) {
+      return list;
     }
     return DEFAULT_NOTICES;
   } catch {

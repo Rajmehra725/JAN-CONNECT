@@ -15,11 +15,9 @@ import {
   AlertCircle,
   Loader2,
 } from "lucide-react";
+import { authApi, contactApi, CaptchaChallenge } from "@/lib/api";
 
-type CaptchaData = {
-  challengeId: string;
-  question: string;
-};
+type CaptchaData = CaptchaChallenge;
 
 export default function ContactPage() {
   const [formData, setFormData] = useState({
@@ -43,34 +41,16 @@ export default function ContactPage() {
     setCaptchaAnswer("");
 
     try {
-      const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-
-      const res = await fetch(`${apiUrl}/api/v1/auth/captcha`, {
-        cache: "no-store",
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (
-        res.ok &&
-        data?.data?.challengeId &&
-        data?.data?.question
-      ) {
-        setCaptcha({
-          challengeId: data.data.challengeId,
-          question: data.data.question,
-        });
+      const res = await authApi.getCaptcha();
+      if (res.success && res.data) {
+        setCaptcha(res.data);
       } else {
         setErrorMessage(
-          data?.message ||
-            "CAPTCHA लोड नहीं हो पाया। कृपया दोबारा प्रयास करें।"
+          res.message || "CAPTCHA लोड नहीं हो पाया। कृपया दोबारा प्रयास करें।"
         );
       }
     } catch {
-      setErrorMessage(
-        "CAPTCHA सर्वर से संपर्क नहीं हो पाया। कृपया सर्वर जाँचें।"
-      );
+      setErrorMessage("CAPTCHA सर्वर से संपर्क नहीं हो पाया। कृपया सर्वर जाँचें।");
     } finally {
       setLoadingCaptcha(false);
     }
@@ -138,30 +118,19 @@ export default function ContactPage() {
     setLoading(true);
 
     try {
-      const apiUrl =
-        process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-
-      const res = await fetch(`${apiUrl}/api/v1/contact`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: formData.name.trim(),
-          mobile: formData.mobile.trim(),
-          email: formData.email.trim(),
-          subject: formData.subject,
-          message: formData.message.trim(),
-          captchaId: captcha.challengeId,
-          captchaAnswer: captchaAnswer.trim(),
-        }),
+      const res = await contactApi.submit({
+        name: formData.name.trim(),
+        mobile: formData.mobile.trim(),
+        email: formData.email.trim(),
+        subject: formData.subject,
+        message: formData.message.trim(),
+        captchaId: captcha.challengeId,
+        captchaAnswer: captchaAnswer.trim(),
       });
 
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok || !data?.success) {
+      if (!res.success) {
         setErrorMessage(
-          data?.message ||
+          res.message ||
             "संदेश भेजने में समस्या हुई। कृपया CAPTCHA जाँचकर दोबारा प्रयास करें।"
         );
 

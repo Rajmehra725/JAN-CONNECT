@@ -83,11 +83,12 @@ export default function SuperAdminDashboardPage() {
 
   const checkHealth = useCallback(async () => {
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5000/api/v1";
-      const res = await fetch(`${apiUrl}/health`, { credentials: "omit" });
+      const rawUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "https://jan-connect-backend.onrender.com/api/v1";
+      const cleanUrl = rawUrl.replace(/\/+$/, "");
+      const res = await fetch(`${cleanUrl}/health`, { credentials: "omit" });
       const data = await res.json().catch(() => null);
-      if (data?.data) {
-        setHealthStatus(data.data);
+      if (data) {
+        setHealthStatus(data.data || { status: data.status, database: data.database });
       }
     } catch {
       setHealthStatus({ status: "DEGRADED", database: "DISCONNECTED" });

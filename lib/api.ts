@@ -4,11 +4,18 @@
  * Supports environment variable configuration via NEXT_PUBLIC_API_BASE_URL or NEXT_PUBLIC_API_URL.
  */
 
-const V1 =
+function cleanBase(url?: string): string {
+  if (!url) return "";
+  return url.trim().replace(/\/+$/, "");
+}
+
+const RAW_BASE =
   process.env.NEXT_PUBLIC_API_BASE_URL ||
   (process.env.NEXT_PUBLIC_API_URL
-    ? `${process.env.NEXT_PUBLIC_API_URL}/api/v1`
-    : "https://jan-connect-backend.onrender.com//api/v1");
+    ? `${cleanBase(process.env.NEXT_PUBLIC_API_URL)}/api/v1`
+    : "https://jan-connect-backend.onrender.com/api/v1");
+
+const V1 = cleanBase(RAW_BASE);
 
 export interface ApiResponse<T = unknown> {
   success: boolean;
@@ -158,15 +165,35 @@ export interface SchemeItem {
   verified?: boolean;
 }
 
+function buildUrl(endpoint: string): string {
+  if (endpoint.startsWith("http://") || endpoint.startsWith("https://")) {
+    return endpoint;
+  }
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return `${V1}${cleanEndpoint}`;
+}
+
 async function request<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<ApiResponse<T>> {
-  const url = endpoint.startsWith("http") ? endpoint : `${V1}${endpoint}`;
+  const url = buildUrl(endpoint);
   const defaultHeaders: Record<string, string> = {};
 
   if (!(options.body instanceof FormData)) {
     defaultHeaders["Content-Type"] = "application/json";
+  }
+
+  // Dual auth: Attach Bearer token from localStorage for seamless cross-origin communication
+  if (typeof window !== "undefined") {
+    try {
+      const storedToken = localStorage.getItem("jc_token");
+      if (storedToken && !defaultHeaders["Authorization"]) {
+        defaultHeaders["Authorization"] = `Bearer ${storedToken}`;
+      }
+    } catch {
+      // Ignore storage access restrictions
+    }
   }
 
   try {
@@ -196,12 +223,18 @@ async function request<T>(
       data: data.data !== undefined ? data.data : data,
     };
   } catch (error) {
+    const rawMsg =
+      error instanceof Error ? error.message : "सर्वर से संपर्क स्थापित नहीं हो सका।";
+    const isNetworkErr =
+      rawMsg.toLowerCase().includes("failed to fetch") ||
+      rawMsg.toLowerCase().includes("fetch failed") ||
+      rawMsg.toLowerCase().includes("networkerror");
+
     return {
       success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "सर्वर से संपर्क स्थापित नहीं हो सका।",
+      message: isNetworkErr
+        ? "बैकएंड सर्वर से कनेक्शन नहीं हो सका (यदि Render स्लीप मोड में है तो चालू होने में 30-50 सेकंड लग सकते हैं)। कृपया कुछ सेकंड बाद पुनः प्रयास करें।"
+        : rawMsg,
     };
   }
 }
@@ -218,14 +251,14 @@ export const authApi = {
       body: JSON.stringify(payload),
     }),
 
-  login: (
+  login: async (
     mobileNumber: string,
     password: string,
     captchaId?: string,
     captchaAnswer?: string,
     expectedRole?: string
-  ) =>
-    request<{ user: UserProfile; token: string }>("/auth/login", {
+  ) => {
+    const res = await request<{ user: UserProfile; token: string }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({
         mobileNumber,
@@ -234,14 +267,54 @@ export const authApi = {
         captchaAnswer,
         expectedRole,
       }),
-    }),
+    });
 
-  logout: () =>
-    request("/auth/logout", {
+    if (res.success && res.data?.token && typeof window !== "undefined") {
+      try {
+        localStorage.setItem("jc_token", res.data.token);
+        if (res.data.user) {
+          localStorage.setItem("jc_user", JSON.stringify(res.data.user));
+        }
+      } catch {
+        // Ignore storage access restrictions
+      }
+    }
+
+    return res;
+  },
+
+  logout: async () => {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("jc_token");
+        localStorage.removeItem("jc_user");
+      }
+    } catch {
+      // Ignore
+    }
+    return request("/auth/logout", {
       method: "POST",
-    }),
+    });
+  },
 
-  getMe: () => request<{ user: UserProfile }>("/auth/me"),
+  getMe: async () => {
+    const res = await request<{ user: UserProfile }>("/auth/me");
+    if (!res.success && typeof window !== "undefined") {
+      if (
+        res.code === "AUTH_REQUIRED" ||
+        res.code === "SESSION_EXPIRED" ||
+        res.code === "INVALID_TOKEN"
+      ) {
+        try {
+          localStorage.removeItem("jc_token");
+          localStorage.removeItem("jc_user");
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    return res;
+  },
 
   changePassword: (currentPassword: string, newPassword: string) =>
     request("/auth/change-password", {
