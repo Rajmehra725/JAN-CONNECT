@@ -113,6 +113,13 @@ export default function PoliticianDashboardPage() {
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
               ताज़ा करें
             </button>
+            <Link
+              href="/profile"
+              className="inline-flex items-center px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold backdrop-blur transition"
+            >
+              <Users className="w-3.5 h-3.5 mr-1.5" />
+              मेरी प्रोफाइल
+            </Link>
             <a
               href={reportsApi.getExportUrl()}
               target="_blank"

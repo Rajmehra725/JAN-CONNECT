@@ -56,6 +56,10 @@ export interface UserProfile {
   email?: string;
   gender?: "MALE" | "FEMALE" | "OTHER";
   occupation?: string;
+  designation?: string;
+  voterId?: string;
+  dateOfBirth?: string;
+  preferredLanguage?: string;
   address?: string;
   villageMohalla?: string;
   wardNumber?: string;
@@ -63,10 +67,17 @@ export interface UserProfile {
   district?: string;
   assemblyConstituency?: string;
   pincode?: string;
-  constituencyId?: { _id: string; name: string; code?: string };
+  familyId?: string;
+  emergencyContact?: string;
+  gpsLocation?: string;
+  profilePhoto?: string;
+  constituencyId?: { _id: string; name: string; code?: string; district?: string };
   wardId?: { _id: string; name?: string; wardNumber: string };
   boothId?: { _id: string; name?: string; boothNumber: string };
+  officeId?: { _id: string; name?: string; address?: string };
+  createdBy?: { _id: string; fullName: string; role: string };
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ComplaintItem {
@@ -92,6 +103,7 @@ export interface ComplaintItem {
   assignedUserId?: { _id: string; fullName: string; role: string };
   assignedOfficeId?: { _id: string; name: string; address?: string };
   location?: string;
+  rejectionReason?: string;
   resolutionDetails?: string;
   resolutionDate?: string;
   createdAt: string;
@@ -140,12 +152,19 @@ export interface DashboardSummary {
     submitted: number;
     inProgress: number;
     resolved: number;
+    rejected: number;
     urgent: number;
+    todayComplaints?: number;
+    resolutionRate?: number;
   };
   users: {
+    total: number;
     citizens: number;
     boothWorkers: number;
     staff: number;
+    politicians?: number;
+    superAdmins?: number;
+    todayRegistrations?: number;
   };
   tasks: {
     total: number;
@@ -153,6 +172,31 @@ export interface DashboardSummary {
     pending: number;
   };
   todayAttendance: number;
+  recentMembers?: Array<{
+    _id: string;
+    fullName: string;
+    mobileNumber: string;
+    role: "SUPER_ADMIN" | "POLITICIAN" | "PA_STAFF" | "BOOTH_WORKER" | "CITIZEN";
+    designation?: string;
+    accountStatus: "ACTIVE" | "SUSPENDED" | "DEACTIVATED";
+    createdAt: string;
+  }>;
+  recentComplaints?: Array<{
+    _id: string;
+    trackingId: string;
+    subject: string;
+    category: string;
+    priority: "LOW" | "MEDIUM" | "HIGH" | "URGENT";
+    status: string;
+    citizenId?: { fullName: string; mobileNumber: string };
+    createdAt: string;
+  }>;
+  trend?: Array<{
+    date: string;
+    label: string;
+    count: number;
+    resolved: number;
+  }>;
 }
 
 export interface NoticeItem {
@@ -340,6 +384,12 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+
+  updateProfile: (payload: Record<string, unknown>) =>
+    request<{ user: UserProfile }>("/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
 };
 
 // ==========================================
@@ -354,7 +404,7 @@ export const complaintsApi = {
 
   getAll: (params?: Record<string, string>) => {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
-    return request<{ complaints: ComplaintItem[]; pagination: unknown }>(
+    return request<{ complaints: ComplaintItem[]; pagination: { total: number; page: number; totalPages: number } }>(
       `/complaints${qs}`
     );
   },
@@ -375,6 +425,7 @@ export const complaintsApi = {
       updateText: string;
       newStatus?: string;
       isInternal?: boolean;
+      rejectionReason?: string;
     }
   ) =>
     request<ComplaintUpdateItem>(`/complaints/${id}/updates`, {
@@ -390,6 +441,31 @@ export const complaintsApi = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+
+  getExportUrl: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return `${buildUrl("/reports/export/complaints")}${qs}`;
+  },
+
+  downloadExport: async (params?: Record<string, string>, filename = "complaints.xlsx") => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    const url = buildUrl(`/reports/export/complaints${qs}`);
+    const token = typeof window !== "undefined" ? localStorage.getItem("jc_token") : null;
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("डाउनलोड विफल रहा।");
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  },
 };
 
 // ==========================================
@@ -472,6 +548,94 @@ export const usersApi = {
     request<{ user: UserProfile }>(`/users/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status }),
+    }),
+
+  delete: (id: string, hardDelete = false) =>
+    request<{ id: string; retentionNotice?: string; softDeactivated?: boolean }>(
+      `/users/${id}${hardDelete ? "?hardDelete=true" : ""}`,
+      { method: "DELETE" }
+    ),
+
+  getExportUrl: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return `${buildUrl("/users/export")}${qs}`;
+  },
+
+  downloadExport: async (params?: Record<string, string>, filename = "members.xlsx") => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    const url = buildUrl(`/users/export${qs}`);
+    const token = typeof window !== "undefined" ? localStorage.getItem("jc_token") : null;
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("सदस्य डेटा डाउनलोड विफल रहा।");
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  },
+
+  downloadTemplate: async (filename = "jan_connect_member_import_template.xlsx") => {
+    const url = buildUrl("/users/import/template");
+    const token = typeof window !== "undefined" ? localStorage.getItem("jc_token") : null;
+    const res = await fetch(url, {
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("टेम्पलेट डाउनलोड विफल रहा।");
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  },
+
+  previewImport: (formData: FormData) =>
+    request<{
+      totalRows: number;
+      validCount: number;
+      invalidCount: number;
+      duplicateCount: number;
+      rows: Array<{
+        rowNumber: number;
+        fullName: string;
+        mobileNumber: string;
+        role: string;
+        designation?: string;
+        voterId?: string;
+        wardNumber?: string;
+        boothNumber?: string;
+        isValid: boolean;
+        isDuplicate: boolean;
+        existsInDatabase: boolean;
+        errors: string[];
+      }>;
+      errors: Array<{ row: number; errors: string[] }>;
+    }>("/users/import/preview", {
+      method: "POST",
+      body: formData,
+    }),
+
+  confirmImport: (payload: { rows: unknown[]; updateExisting?: boolean }) =>
+    request<{
+      totalProcessed: number;
+      created: number;
+      updated: number;
+      skipped: number;
+      results: Array<{ rowNumber: number; mobileNumber: string; status: string; message: string }>;
+    }>("/users/import/confirm", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
 };
 

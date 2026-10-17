@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   CheckCircle2,
   AlertCircle,
@@ -10,7 +11,8 @@ import {
   LogOut,
   Loader2,
   Building2,
-  FileText
+  FileText,
+  User
 } from "lucide-react";
 import {
   complaintsApi,
@@ -98,7 +100,8 @@ export default function StaffDashboardPage() {
       const res = await complaintsApi.addUpdate(selectedComplaint._id, {
         updateText: updateText.trim(),
         newStatus,
-        isInternal
+        isInternal,
+        rejectionReason: newStatus === "REJECTED" ? updateText.trim() : undefined,
       });
 
       if (res.success) {
@@ -194,6 +197,13 @@ export default function StaffDashboardPage() {
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
               ताज़ा करें
             </button>
+            <Link
+              href="/profile"
+              className="inline-flex items-center px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 shadow-sm transition"
+            >
+              <User className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+              मेरी प्रोफाइल
+            </Link>
             <button
               onClick={() => setShowTaskModal(true)}
               className="inline-flex items-center px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-semibold shadow-sm transition"

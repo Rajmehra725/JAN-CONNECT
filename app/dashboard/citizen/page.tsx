@@ -14,7 +14,8 @@ import {
   Building2,
   RefreshCw,
   LogOut,
-  Loader2
+  Loader2,
+  User
 } from "lucide-react";
 import { complaintsApi, ComplaintItem } from "@/lib/api";
 import { useAuth, useRequireAuth } from "@/lib/auth-context";
@@ -179,6 +180,13 @@ export default function CitizenDashboardPage() {
               <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? "animate-spin" : ""}`} />
               ताज़ा करें
             </button>
+            <Link
+              href="/profile"
+              className="inline-flex items-center px-3.5 py-2 border border-slate-300 rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 shadow-sm transition"
+            >
+              <User className="w-3.5 h-3.5 mr-1.5 text-orange-600" />
+              मेरी प्रोफाइल
+            </Link>
             <button
               onClick={() => setShowNewForm(!showNewForm)}
               className="inline-flex items-center px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-semibold shadow-sm transition"
