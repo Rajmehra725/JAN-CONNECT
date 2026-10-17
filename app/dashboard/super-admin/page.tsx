@@ -45,19 +45,31 @@ import {
 } from "@/lib/api";
 import { useAuth, useRequireAuth } from "@/lib/auth-context";
 
-interface PreviewRow {
+interface ValidatedImportRow {
   rowNumber: number;
   fullName: string;
   mobileNumber: string;
+  rawMobile?: string;
   role: string;
-  designation?: string;
-  voterId?: string;
-  wardNumber?: string;
-  boothNumber?: string;
   isValid: boolean;
-  isDuplicate: boolean;
-  existsInDatabase: boolean;
+  isDuplicateInFile: boolean;
+  duplicateOfRow?: number | null;
+  isExistingInDb: boolean;
+  existingRecord?: { fullName: string; role: string; accountStatus: string };
   errors: string[];
+}
+
+interface ImportPreviewResult {
+  headers: string[];
+  detectedMapping: { nameColumn: string; phoneColumn: string };
+  totalRows: number;
+  validRows: number;
+  duplicateInFileRows: number;
+  existingInDbRows: number;
+  invalidRows: number;
+  preview: ValidatedImportRow[];
+  rows: ValidatedImportRow[];
+  errors: Array<{ rowNumber: number; name?: string; mobile?: string; reason: string }>;
 }
 
 export default function SuperAdminDashboardPage() {
@@ -96,6 +108,7 @@ export default function SuperAdminDashboardPage() {
 
   // Edit User Form
   const [editFullName, setEditFullName] = useState("");
+  const [editRole, setEditRole] = useState<"SUPER_ADMIN" | "POLITICIAN" | "PA_STAFF" | "BOOTH_WORKER" | "CITIZEN">("CITIZEN");
   const [editEmail, setEditEmail] = useState("");
   const [editAlternateMobile, setEditAlternateMobile] = useState("");
   const [editDesignation, setEditDesignation] = useState("");
@@ -121,23 +134,21 @@ export default function SuperAdminDashboardPage() {
   const [newBooth, setNewBooth] = useState("");
   const [submittingUser, setSubmittingUser] = useState(false);
 
-  // Excel Import Modal
+  // Excel Import Modal (Dedicated 2-Column Name + Phone Number Import)
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importingPreview, setImportingPreview] = useState(false);
-  const [importPreviewData, setImportPreviewData] = useState<{
-    totalRows: number;
-    validCount: number;
-    invalidCount: number;
-    duplicateCount: number;
-    rows: PreviewRow[];
-  } | null>(null);
-  const [updateExistingOnImport, setUpdateExistingOnImport] = useState(true);
+  const [importPreviewData, setImportPreviewData] = useState<ImportPreviewResult | null>(null);
+  const [nameColumnMapping, setNameColumnMapping] = useState<string>("");
+  const [phoneColumnMapping, setPhoneColumnMapping] = useState<string>("");
+  const [skipExistingOnImport, setSkipExistingOnImport] = useState(true);
   const [confirmingImport, setConfirmingImport] = useState(false);
+  const [downloadingErrorReport, setDownloadingErrorReport] = useState(false);
   const [importResultSummary, setImportResultSummary] = useState<{
-    created: number;
-    updated: number;
-    skipped: number;
+    totalProcessed: number;
+    createdCount: number;
+    skippedCount: number;
+    failedCount: number;
   } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -291,6 +302,7 @@ export default function SuperAdminDashboardPage() {
   const openEditModal = (u: UserProfile) => {
     setSelectedUser(u);
     setEditFullName(u.fullName || "");
+    setEditRole((u.role as "SUPER_ADMIN" | "POLITICIAN" | "PA_STAFF" | "BOOTH_WORKER" | "CITIZEN") || "CITIZEN");
     setEditEmail(u.email || "");
     setEditAlternateMobile(u.alternateMobile || "");
     setEditDesignation(u.designation || "");
@@ -312,6 +324,7 @@ export default function SuperAdminDashboardPage() {
     try {
       const res = await usersApi.update(selectedUser._id, {
         fullName: editFullName.trim(),
+        role: editRole,
         email: editEmail.trim() || undefined,
         alternateMobile: editAlternateMobile.trim() || undefined,
         designation: editDesignation.trim() || undefined,
@@ -324,7 +337,7 @@ export default function SuperAdminDashboardPage() {
       });
 
       if (res.success) {
-        setSuccessMsg("सदस्य विवरण सफलतापूर्वक अद्यतित किया गया।");
+        setSuccessMsg(`सदस्य विवरण एवं भूमिका (${editRole}) सफलतापूर्वक अद्यतित की गई।`);
         setEditUserModal(false);
         fetchUsers(memberPage);
         fetchSummary();
@@ -457,22 +470,22 @@ export default function SuperAdminDashboardPage() {
     }
   };
 
-  const handleFileSelectForPreview = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImportFile(file);
+  const runPreviewAnalysis = async (file: File, customName?: string, customPhone?: string) => {
     setImportingPreview(true);
-    setImportPreviewData(null);
-    setImportResultSummary(null);
     setErrorMsg("");
-
-    const formData = new FormData();
-    formData.append("file", file);
-
     try {
+      const formData = new FormData();
+      formData.append("file", file);
+      if (customName) formData.append("nameColumn", customName);
+      if (customPhone) formData.append("phoneColumn", customPhone);
+
       const res = await usersApi.previewImport(formData);
       if (res.success && res.data) {
         setImportPreviewData(res.data);
+        if (res.data.detectedMapping) {
+          setNameColumnMapping(res.data.detectedMapping.nameColumn || "");
+          setPhoneColumnMapping(res.data.detectedMapping.phoneColumn || "");
+        }
       } else {
         setErrorMsg(res.message || "फाइल पूर्वावलोकन में त्रुटि हुई।");
       }
@@ -483,6 +496,21 @@ export default function SuperAdminDashboardPage() {
     }
   };
 
+  const handleFileSelectForPreview = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFile(file);
+    setImportPreviewData(null);
+    setImportResultSummary(null);
+    setErrorMsg("");
+    await runPreviewAnalysis(file);
+  };
+
+  const handleApplyCustomMapping = async () => {
+    if (!importFile) return;
+    await runPreviewAnalysis(importFile, nameColumnMapping, phoneColumnMapping);
+  };
+
   const handleConfirmImport = async () => {
     if (!importPreviewData?.rows || importPreviewData.rows.length === 0) return;
     setConfirmingImport(true);
@@ -490,17 +518,18 @@ export default function SuperAdminDashboardPage() {
     try {
       const res = await usersApi.confirmImport({
         rows: importPreviewData.rows,
-        updateExisting: updateExistingOnImport,
+        skipExisting: skipExistingOnImport,
       });
 
       if (res.success && res.data) {
         setImportResultSummary({
-          created: res.data.created,
-          updated: res.data.updated,
-          skipped: res.data.skipped,
+          totalProcessed: res.data.totalProcessed,
+          createdCount: res.data.createdCount,
+          skippedCount: res.data.skippedCount,
+          failedCount: res.data.failedCount,
         });
         setSuccessMsg(
-          `इम्पोर्ट पूर्ण: ${res.data.created} नए सदस्य जोड़े गए, ${res.data.updated} अद्यतित किए गए।`
+          `इम्पोर्ट पूर्ण: ${res.data.createdCount} नए नागरिक सदस्य जोड़े गए, ${res.data.skippedCount} छोड़े गए।`
         );
         fetchUsers(1);
         fetchSummary();
@@ -511,6 +540,22 @@ export default function SuperAdminDashboardPage() {
       setErrorMsg(err instanceof Error ? err.message : "सर्वर त्रुटि।");
     } finally {
       setConfirmingImport(false);
+    }
+  };
+
+  const handleDownloadErrorReport = async () => {
+    if (!importPreviewData?.errors || importPreviewData.errors.length === 0) {
+      setErrorMsg("डाउनलोड करने के लिए कोई त्रुटि या छोड़ी गई प्रविष्टि नहीं है।");
+      return;
+    }
+    setDownloadingErrorReport(true);
+    try {
+      await usersApi.downloadErrorReport(importPreviewData.errors);
+      setSuccessMsg("त्रुटि एवं छोड़ी गई प्रविष्टियों की रिपोर्ट सफलतापूर्वक डाउनलोड हो गई।");
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : "त्रुटि रिपोर्ट डाउनलोड में समस्या आई।");
+    } finally {
+      setDownloadingErrorReport(false);
     }
   };
 
@@ -1623,6 +1668,46 @@ export default function SuperAdminDashboardPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
+                  <label className="mb-1 block font-bold text-slate-300">
+                    भूमिका / पद श्रेणी (Role) <span className="text-orange-400">*</span>
+                  </label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value as "SUPER_ADMIN" | "POLITICIAN" | "PA_STAFF" | "BOOTH_WORKER" | "CITIZEN")}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 font-bold text-white outline-none focus:border-blue-500"
+                  >
+                    <option value="CITIZEN">नागरिक (CITIZEN)</option>
+                    <option value="BOOTH_WORKER">बूथ कार्यकर्ता (BOOTH_WORKER)</option>
+                    <option value="PA_STAFF">पीए / कार्यालय स्टाफ (PA_STAFF)</option>
+                    <option value="POLITICIAN">जन प्रतिनिधि / नेता (POLITICIAN)</option>
+                    <option value="SUPER_ADMIN">मुख्य व्यवस्थापक (SUPER_ADMIN)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block font-bold text-slate-300">खाता स्थिति (Status)</label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as "ACTIVE" | "SUSPENDED" | "DEACTIVATED")}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-white outline-none focus:border-blue-500"
+                  >
+                    <option value="ACTIVE">सक्रिय (ACTIVE)</option>
+                    <option value="SUSPENDED">निलंबित (SUSPENDED)</option>
+                    <option value="DEACTIVATED">निष्क्रिय (DEACTIVATED)</option>
+                  </select>
+                </div>
+              </div>
+
+              {(editRole === "BOOTH_WORKER" || editRole === "PA_STAFF") && (
+                <div className="rounded-xl border border-blue-900/60 bg-blue-950/40 p-2.5 text-[11px] text-blue-300">
+                  <p className="font-semibold">कार्यकर्ता आवंटन सूचना:</p>
+                  <p className="text-slate-300">
+                    कार्यकर्ता या स्टाफ को प्रभार सौंपने के लिए नीचे वार्ड नंबर, बूथ नंबर एवं विधानसभा का विवरण दर्ज करें।
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="mb-1 block font-bold text-slate-300">पद (Designation)</label>
                   <input
                     type="text"
@@ -1697,16 +1782,13 @@ export default function SuperAdminDashboardPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block font-bold text-slate-300">खाता स्थिति</label>
-                  <select
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value as "ACTIVE" | "SUSPENDED" | "DEACTIVATED")}
+                  <label className="mb-1 block font-bold text-slate-300">जिला (District)</label>
+                  <input
+                    type="text"
+                    value={editDistrict}
+                    onChange={(e) => setEditDistrict(e.target.value)}
                     className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-white outline-none focus:border-blue-500"
-                  >
-                    <option value="ACTIVE">सक्रिय (ACTIVE)</option>
-                    <option value="SUSPENDED">निलंबित (SUSPENDED)</option>
-                    <option value="DEACTIVATED">निष्क्रिय (DEACTIVATED)</option>
-                  </select>
+                  />
                 </div>
               </div>
 
@@ -1787,21 +1869,33 @@ export default function SuperAdminDashboardPage() {
       )}
 
       {/* ========================================================
-          MODAL: EXCEL IMPORT WORKFLOW
+          MODAL: DEDICATED EXCEL IMPORT (NAME + PHONE NUMBER)
          ======================================================== */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-3xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-4xl rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2">
-                <FileSpreadsheet className="h-5 w-5 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">सदस्य एक्सेल आयात (Bulk Member Excel Import)</h3>
+                <FileSpreadsheet className="h-6 w-6 text-emerald-400" />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-white">एक्सेल से सदस्य आयात करें (Import Members from Excel)</h3>
+                    <span className="rounded-full bg-emerald-950/70 border border-emerald-700/60 px-2.5 py-0.5 text-[10px] font-bold text-emerald-300">
+                      केवल 2 कॉलम: Name + Phone
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    सरल दो-कॉलम एक्सेल (.xlsx, .xls, .csv) सीधे अपलोड करें। अन्य किसी कॉलम की आवश्यकता नहीं है।
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => {
                   setShowImportModal(false);
                   setImportPreviewData(null);
                   setImportFile(null);
+                  setImportResultSummary(null);
                 }}
                 className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
               >
@@ -1809,26 +1903,34 @@ export default function SuperAdminDashboardPage() {
               </button>
             </div>
 
-            {/* Template Download Step */}
-            <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold text-white">चरण 1: मानक एक्सेल टेम्पलेट डाउनलोड करें</p>
-                <p className="text-[11px] text-slate-400">
-                  टेम्पलेट में सही कॉलम हेडर (fullName, mobileNumber, role, designation, voterId, wardNumber, boothNumber) सम्मिलित हैं।
-                </p>
+            {/* Strict Policy & Information Notice */}
+            <div className="rounded-xl border border-slate-800 bg-slate-800/40 p-3.5 text-xs space-y-1.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="font-bold text-slate-200">डेटा सुरक्षा एवं आयात नियम (Import Guardrails):</p>
+                <button
+                  type="button"
+                  onClick={handleDownloadTemplate}
+                  className="inline-flex items-center rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-[11px] font-bold text-emerald-400 hover:bg-slate-700"
+                >
+                  <Download size={12} className="mr-1" />
+                  मानक 2-कॉलम टेम्पलेट (.xlsx) डाउनलोड करें
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={handleDownloadTemplate}
-                className="inline-flex items-center shrink-0 rounded-xl border border-slate-700 bg-slate-800 px-3.5 py-2 text-xs font-bold text-emerald-400 hover:bg-slate-700"
-              >
-                <Download size={13} className="mr-1.5" />
-                टेम्पलेट (.xlsx) डाउनलोड
-              </button>
+              <ul className="list-disc list-inside text-[11px] text-slate-400 space-y-0.5">
+                <li>
+                  <strong className="text-slate-300">डिफ़ॉल्ट भूमिका:</strong> सभी आयातित सदस्य सुरक्षित रूप से <strong className="text-emerald-400">नागरिक (CITIZEN)</strong> के रूप में दर्ज होंगे।
+                </li>
+                <li>
+                  <strong className="text-slate-300">भूमिका संवर्धन:</strong> किसी भी सदस्य को बाद में सदस्य सूची के <em>&quot;संपादित करें (Edit)&quot;</em> बटन से बूथ कार्यकर्ता या स्टाफ बनाया जा सकता है।
+                </li>
+                <li>
+                  <strong className="text-slate-300">डुप्लीकेट सुरक्षा:</strong> फाइल में पुनरावृत्ति होने पर केवल पहली प्रविष्टि ली जाएगी तथा डेटाबेस में पहले से मौजूद सदस्यों को सुरक्षित रूप से छोड़ दिया जाएगा।
+                </li>
+              </ul>
             </div>
 
             {/* File Upload Dropzone */}
-            <div className="rounded-xl border-2 border-dashed border-slate-700 bg-slate-800/20 p-6 text-center">
+            <div className="rounded-xl border-2 border-dashed border-slate-700 bg-slate-800/20 p-5 text-center transition hover:border-slate-600">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1838,18 +1940,18 @@ export default function SuperAdminDashboardPage() {
               />
               <FileSpreadsheet className="mx-auto h-8 w-8 text-slate-500" />
               <p className="mt-2 text-xs font-bold text-white">
-                {importFile ? importFile.name : "एक्सेल अथवा CSV फाइल का चयन करें"}
+                {importFile ? importFile.name : "अपनी 2-कॉलम एक्सेल या CSV फाइल चुनें"}
               </p>
               <p className="mt-1 text-[11px] text-slate-500">
-                अधिकतम 2000 पंक्तियाँ प्रति बैच समर्थित हैं
+                .xlsx, .xls अथवा .csv फाइलें समर्थित हैं (अधिकतम 2500 पंक्तियाँ प्रति बैच)
               </p>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="mt-3 inline-flex items-center rounded-xl bg-orange-600 px-4 py-2 text-xs font-bold text-white hover:bg-orange-500"
+                className="mt-2.5 inline-flex items-center rounded-xl bg-orange-600 px-4 py-1.5 text-xs font-bold text-white shadow-md hover:bg-orange-500"
               >
                 <Upload size={13} className="mr-1.5" />
-                फाइल चुनें
+                {importFile ? "दूसरी फाइल चुनें" : "फाइल अपलोड करें"}
               </button>
             </div>
 
@@ -1857,58 +1959,168 @@ export default function SuperAdminDashboardPage() {
             {importingPreview && (
               <div className="py-6 text-center text-xs text-slate-400">
                 <Loader2 className="mx-auto h-6 w-6 animate-spin text-orange-500" />
-                <p className="mt-2">एक्सेल डेटा का सत्यापन व पूर्वावलोकन हो रहा है...</p>
+                <p className="mt-2 font-medium">एक्सेल डेटा पार्सिंग एवं फोन नंबर सत्यापन प्रगति पर है...</p>
               </div>
             )}
 
-            {/* Preview Results Table */}
+            {/* Column Mapping & Preview Results */}
             {importPreviewData && (
               <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-800/60 p-3 text-xs">
-                  <div className="flex items-center gap-3">
-                    <span>कुल पंक्तियाँ: <strong className="text-white">{importPreviewData.totalRows}</strong></span>
-                    <span className="text-emerald-400 font-bold">वैध: {importPreviewData.validCount}</span>
-                    <span className="text-amber-400 font-bold">डुप्लीकेट: {importPreviewData.duplicateCount}</span>
-                    <span className="text-rose-400 font-bold">अवैध: {importPreviewData.invalidCount}</span>
+                {/* Manual Column Mapping Section */}
+                {importPreviewData.headers && importPreviewData.headers.length > 0 && (
+                  <div className="rounded-xl border border-slate-800 bg-slate-800/50 p-3 text-xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-200">
+                        कॉलम मैपिंग (Column Mapping)
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        (सिस्टम ने स्वतः पहचान की है, आप आवश्यकतानुसार बदल सकते हैं)
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-0.5">नाम कॉलम (Name Column)</label>
+                        <select
+                          value={nameColumnMapping}
+                          onChange={(e) => setNameColumnMapping(e.target.value)}
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-white outline-none focus:border-orange-500"
+                        >
+                          {importPreviewData.headers.map((h) => (
+                            <option key={`name-${h}`} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-0.5">फोन नंबर कॉलम (Phone Column)</label>
+                        <select
+                          value={phoneColumnMapping}
+                          onChange={(e) => setPhoneColumnMapping(e.target.value)}
+                          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-white outline-none focus:border-orange-500"
+                        >
+                          {importPreviewData.headers.map((h) => (
+                            <option key={`phone-${h}`} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={handleApplyCustomMapping}
+                          className="w-full rounded-lg border border-orange-500/40 bg-orange-950/40 px-3 py-1.5 text-xs font-bold text-orange-300 hover:bg-orange-900/60"
+                        >
+                          मैपिंग पुनः जांचें (Re-Check)
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={updateExistingOnImport}
-                      onChange={(e) => setUpdateExistingOnImport(e.target.checked)}
-                      className="rounded-sm text-orange-600"
-                    />
-                    <span>मौजूदा सदस्यों का डेटा अपडेट करें</span>
-                  </label>
+                )}
+
+                {/* 4 Distinct Stat Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
+                  <div className="rounded-xl border border-slate-800 bg-slate-800/60 p-2.5">
+                    <span className="block text-[10px] text-slate-400">कुल पंक्तियाँ</span>
+                    <span className="text-base font-extrabold text-white">{importPreviewData.totalRows}</span>
+                  </div>
+                  <div className="rounded-xl border border-emerald-900/60 bg-emerald-950/30 p-2.5">
+                    <span className="block text-[10px] text-emerald-400">नए मान्य सदस्य</span>
+                    <span className="text-base font-extrabold text-emerald-300">{importPreviewData.validRows}</span>
+                  </div>
+                  <div className="rounded-xl border border-amber-900/60 bg-amber-950/30 p-2.5">
+                    <span className="block text-[10px] text-amber-400">फाइल में डुप्लीकेट</span>
+                    <span className="text-base font-extrabold text-amber-300">{importPreviewData.duplicateInFileRows}</span>
+                  </div>
+                  <div className="rounded-xl border border-blue-900/60 bg-blue-950/30 p-2.5">
+                    <span className="block text-[10px] text-blue-400">डेटाबेस में मौजूद</span>
+                    <span className="text-base font-extrabold text-blue-300">{importPreviewData.existingInDbRows}</span>
+                  </div>
+                  <div className="rounded-xl border border-rose-900/60 bg-rose-950/30 p-2.5">
+                    <span className="block text-[10px] text-rose-400">अमान्य पंक्तियाँ</span>
+                    <span className="text-base font-extrabold text-rose-300">{importPreviewData.invalidRows}</span>
+                  </div>
                 </div>
 
+                {/* Skip Existing Option */}
+                <div className="flex items-center justify-between rounded-xl bg-slate-800/40 p-2.5 text-xs border border-slate-800">
+                  <label className="flex items-center gap-2 cursor-pointer font-semibold text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={skipExistingOnImport}
+                      onChange={(e) => setSkipExistingOnImport(e.target.checked)}
+                      className="rounded-sm text-emerald-600 focus:ring-0"
+                    />
+                    <span>मौजूदा डेटाबेस सदस्यों को छोड़ें (सुरक्षित नीति - भूमिकाएं अपरिवर्तित रहेंगी)</span>
+                  </label>
+
+                  {importPreviewData.errors && importPreviewData.errors.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={downloadingErrorReport}
+                      onClick={handleDownloadErrorReport}
+                      className="inline-flex items-center rounded-lg border border-rose-800/60 bg-rose-950/40 px-3 py-1 text-[11px] font-bold text-rose-300 hover:bg-rose-900/60 disabled:opacity-50"
+                    >
+                      {downloadingErrorReport ? (
+                        <Loader2 size={11} className="mr-1 animate-spin" />
+                      ) : (
+                        <Download size={11} className="mr-1" />
+                      )}
+                      त्रुटि व स्किप रिपोर्ट (.xlsx) डाउनलोड
+                    </button>
+                  )}
+                </div>
+
+                {/* Preview Table */}
                 <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-800">
                   <table className="w-full text-left text-[11px]">
                     <thead className="bg-slate-800 text-slate-400 sticky top-0">
                       <tr>
                         <th className="py-2 px-3">पंक्ति</th>
-                        <th className="py-2 px-3">नाम</th>
-                        <th className="py-2 px-3">मोबाइल</th>
-                        <th className="py-2 px-3">भूमिका / पद</th>
-                        <th className="py-2 px-3">स्थिति</th>
+                        <th className="py-2 px-3">नाम (Name)</th>
+                        <th className="py-2 px-3">फोन नंबर (Phone)</th>
+                        <th className="py-2 px-3">भूमिका (Role)</th>
+                        <th className="py-2 px-3">स्थिति व विवरण (Status)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800">
-                      {importPreviewData.rows.slice(0, 50).map((r) => (
-                        <tr key={r.rowNumber} className={!r.isValid ? "bg-rose-950/20" : ""}>
+                      {importPreviewData.preview.map((r) => (
+                        <tr
+                          key={`row-${r.rowNumber}`}
+                          className={
+                            !r.isValid
+                              ? "bg-rose-950/20"
+                              : r.isDuplicateInFile
+                              ? "bg-amber-950/20"
+                              : r.isExistingInDb
+                              ? "bg-blue-950/20"
+                              : ""
+                          }
+                        >
                           <td className="py-2 px-3 font-mono">{r.rowNumber}</td>
-                          <td className="py-2 px-3 font-bold text-white">{r.fullName}</td>
-                          <td className="py-2 px-3 font-mono">{r.mobileNumber}</td>
-                          <td className="py-2 px-3">{r.role} {r.designation ? `(${r.designation})` : ""}</td>
+                          <td className="py-2 px-3 font-bold text-white">{r.fullName || "—"}</td>
+                          <td className="py-2 px-3 font-mono text-slate-200">
+                            {r.mobileNumber ? `+91 ${r.mobileNumber}` : (r.rawMobile || "—")}
+                          </td>
                           <td className="py-2 px-3">
-                            {r.isValid ? (
-                              r.existsInDatabase ? (
-                                <span className="text-amber-400 font-bold">डेटाबेस में मौजूद</span>
-                              ) : (
-                                <span className="text-emerald-400 font-bold">वैध (नया)</span>
-                              )
+                            <span className="rounded-md bg-slate-800 px-2 py-0.5 font-bold text-slate-300 text-[10px]">
+                              CITIZEN
+                            </span>
+                          </td>
+                          <td className="py-2 px-3">
+                            {r.isValid && !r.isDuplicateInFile && !r.isExistingInDb ? (
+                              <span className="font-bold text-emerald-400">नया सदस्य (स्वीकार्य)</span>
+                            ) : r.isDuplicateInFile ? (
+                              <span className="font-bold text-amber-400">
+                                फाइल में डुप्लीकेट (पंक्ति #{r.duplicateOfRow} का)
+                              </span>
+                            ) : r.isExistingInDb ? (
+                              <span className="font-bold text-blue-400">
+                                डेटाबेस में मौजूद ({r.existingRecord?.fullName} - {r.existingRecord?.role}) [स्किप होगा]
+                              </span>
                             ) : (
-                              <span className="text-rose-400 font-bold">{r.errors.join(", ")}</span>
+                              <span className="font-bold text-rose-400">{r.errors.join(", ")}</span>
                             )}
                           </td>
                         </tr>
@@ -1917,7 +2129,8 @@ export default function SuperAdminDashboardPage() {
                   </table>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-2">
+                {/* Import Confirmation Buttons */}
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-800">
                   <button
                     type="button"
                     onClick={() => {
@@ -1930,23 +2143,31 @@ export default function SuperAdminDashboardPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={confirmingImport || importPreviewData.validCount === 0}
+                    disabled={confirmingImport || importPreviewData.validRows === 0}
                     onClick={handleConfirmImport}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-50"
                   >
                     {confirmingImport ? <Loader2 size={13} className="animate-spin" /> : null}
-                    डेटाबेस में आयात की पुष्टि करें ({importPreviewData.validCount} सदस्य)
+                    डेटाबेस में आयात की पुष्टि करें ({importPreviewData.validRows} नए सदस्य)
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Import Result Notification */}
+            {/* Post-Import Result Summary Notification */}
             {importResultSummary && (
-              <div className="rounded-xl border border-emerald-800 bg-emerald-950/60 p-4 text-xs space-y-1">
-                <p className="font-bold text-emerald-300">आयात प्रक्रिया पूर्ण हुई!</p>
+              <div className="rounded-xl border border-emerald-800 bg-emerald-950/60 p-4 text-xs space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                  <p className="font-bold text-emerald-300">एक्सेल आयात प्रक्रिया सफलतापूर्वक संपन्न हुई!</p>
+                </div>
                 <p className="text-slate-300">
-                  नए सदस्य जोड़े गए: <strong className="text-white">{importResultSummary.created}</strong> | अद्यतित किए गए: <strong className="text-white">{importResultSummary.updated}</strong> | छोड़े गए: <strong className="text-white">{importResultSummary.skipped}</strong>
+                  नए नागरिक जोड़े गए: <strong className="text-white">{importResultSummary.createdCount}</strong> |{" "}
+                  सुरक्षा हेतु छोड़े गए (मौजूदा/डुप्लीकेट): <strong className="text-white">{importResultSummary.skippedCount}</strong> |{" "}
+                  विफल: <strong className="text-white">{importResultSummary.failedCount}</strong>
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  सभी नए सदस्य नीचे सदस्य तालिका में प्रदर्शित हो रहे हैं। आप किसी भी सदस्य को एडिट कर बूथ कार्यकर्ता या स्टाफ में पदोन्नत कर सकते हैं।
                 </p>
               </div>
             )}

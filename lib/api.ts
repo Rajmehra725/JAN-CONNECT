@@ -602,41 +602,83 @@ export const usersApi = {
 
   previewImport: (formData: FormData) =>
     request<{
+      headers: string[];
+      detectedMapping: { nameColumn: string; phoneColumn: string };
       totalRows: number;
-      validCount: number;
-      invalidCount: number;
-      duplicateCount: number;
+      validRows: number;
+      duplicateInFileRows: number;
+      existingInDbRows: number;
+      invalidRows: number;
+      preview: Array<{
+        rowNumber: number;
+        fullName: string;
+        mobileNumber: string;
+        rawMobile: string;
+        role: string;
+        isValid: boolean;
+        isDuplicateInFile: boolean;
+        duplicateOfRow: number | null;
+        isExistingInDb: boolean;
+        existingRecord?: { fullName: string; role: string; accountStatus: string };
+        errors: string[];
+      }>;
       rows: Array<{
         rowNumber: number;
         fullName: string;
         mobileNumber: string;
+        rawMobile: string;
         role: string;
-        designation?: string;
-        voterId?: string;
-        wardNumber?: string;
-        boothNumber?: string;
         isValid: boolean;
-        isDuplicate: boolean;
-        existsInDatabase: boolean;
+        isDuplicateInFile: boolean;
+        duplicateOfRow: number | null;
+        isExistingInDb: boolean;
+        existingRecord?: { fullName: string; role: string; accountStatus: string };
         errors: string[];
       }>;
-      errors: Array<{ row: number; errors: string[] }>;
+      errors: Array<{ rowNumber: number; name: string; mobile: string; reason: string }>;
     }>("/users/import/preview", {
       method: "POST",
       body: formData,
     }),
 
-  confirmImport: (payload: { rows: unknown[]; updateExisting?: boolean }) =>
+  confirmImport: (payload: { rows: unknown[]; skipExisting?: boolean }) =>
     request<{
       totalProcessed: number;
-      created: number;
-      updated: number;
-      skipped: number;
-      results: Array<{ rowNumber: number; mobileNumber: string; status: string; message: string }>;
+      createdCount: number;
+      skippedCount: number;
+      failedCount: number;
+      failures: Array<{ rowNumber: number; name?: string; mobile?: string; reason: string }>;
     }>("/users/import/confirm", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  downloadErrorReport: async (
+    errors: Array<{ rowNumber: number; name?: string; mobile?: string; reason: string }>,
+    filename = "jan_connect_import_errors.xlsx"
+  ) => {
+    const url = buildUrl("/users/import/error-report");
+    const token = typeof window !== "undefined" ? localStorage.getItem("jc_token") : null;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify({ errors }),
+    });
+    if (!res.ok) throw new Error("त्रुटि रिपोर्ट डाउनलोड विफल रहा।");
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  },
 };
 
 // ==========================================
