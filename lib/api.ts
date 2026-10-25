@@ -57,26 +57,124 @@ export interface UserProfile {
   gender?: "MALE" | "FEMALE" | "OTHER";
   occupation?: string;
   designation?: string;
+  designationCategory?: "POLITICAL" | "ORGANIZATIONAL" | "ADMINISTRATIVE";
+  designationId?: { _id: string; title: string; titleHi?: string; category: string; level?: string } | string;
+  department?: string;
+  departmentId?: { _id: string; name: string; nameHi?: string; code?: string } | string;
+  officialEmail?: string;
+  officeAddress?: string;
+  officeContact?: string;
+  termStartDate?: string;
+  termEndDate?: string;
   voterId?: string;
   dateOfBirth?: string;
   preferredLanguage?: string;
   address?: string;
   villageMohalla?: string;
-  wardNumber?: string;
-  boothNumber?: string;
+  state?: string;
+  division?: string;
   district?: string;
+  areaType?: "RURAL" | "URBAN";
+  tehsil?: string;
+  developmentBlock?: string;
+  gramPanchayat?: string;
+  village?: string;
+  localBodyType?: string;
+  localBody?: string;
+  wardNumber?: string;
+  wardName?: string;
+  boothNumber?: string;
   assemblyConstituency?: string;
+  parliamentaryConstituency?: string;
   pincode?: string;
   familyId?: string;
   emergencyContact?: string;
   gpsLocation?: string;
   profilePhoto?: string;
+  verificationStatus?: "UNVERIFIED" | "VERIFIED" | "REJECTED" | "FLAGGED";
+  verifiedBy?: { _id: string; fullName: string; role: string };
+  verifiedAt?: string;
+  verificationNotes?: string;
+  sourceOfInformation?: string;
+  isPublicDirectoryVisible?: boolean;
   constituencyId?: { _id: string; name: string; code?: string; district?: string };
   wardId?: { _id: string; name?: string; wardNumber: string };
   boothId?: { _id: string; name?: string; boothNumber: string };
   officeId?: { _id: string; name?: string; address?: string };
   createdBy?: { _id: string; fullName: string; role: string };
   createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DesignationItem {
+  _id: string;
+  title: string;
+  titleHi?: string;
+  category: "POLITICAL" | "ORGANIZATIONAL" | "ADMINISTRATIVE";
+  level?: "NATIONAL" | "STATE" | "DIVISION" | "DISTRICT" | "SUB_DIVISION" | "BLOCK" | "MUNICIPAL" | "PANCHAYAT" | "BOOTH";
+  applicableAreaType?: "ALL" | "RURAL" | "URBAN";
+  departmentId?: { _id: string; name: string; nameHi?: string; code?: string } | string;
+  departmentName?: string;
+  sortOrder?: number;
+  isActive: boolean;
+  assignedMembersCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DepartmentItem {
+  _id: string;
+  name: string;
+  nameHi?: string;
+  code?: string;
+  description?: string;
+  isActive: boolean;
+  createdAt?: string;
+}
+
+export interface GeographyHierarchy {
+  states: string[];
+  districts: string[];
+  assemblyConstituencies: string[];
+  parliamentaryConstituencies: string[];
+  rural: {
+    tehsils: string[];
+    developmentBlocks: string[];
+    gramPanchayats: string[];
+    villages: string[];
+  };
+  urban: {
+    localBodyTypes: string[];
+    localBodies: string[];
+    wards: Array<{ wardNumber: string; wardName?: string }>;
+  };
+}
+
+export interface PublicDirectoryMember {
+  _id: string;
+  fullName: string;
+  designation: string;
+  designationCategory: string;
+  department?: string;
+  profilePhoto?: string;
+  state?: string;
+  division?: string;
+  district?: string;
+  assemblyConstituency?: string;
+  parliamentaryConstituency?: string;
+  areaType?: string;
+  developmentBlock?: string;
+  localBody?: string;
+  gramPanchayat?: string;
+  village?: string;
+  wardNumber?: string;
+  wardName?: string;
+  officeAddress?: string;
+  officeContact?: string;
+  officialEmail?: string;
+  termStartDate?: string;
+  termEndDate?: string;
+  verificationStatus: string;
   updatedAt?: string;
 }
 
@@ -544,6 +642,19 @@ export const usersApi = {
       body: JSON.stringify(payload),
     }),
 
+  verify: (
+    id: string,
+    payload: {
+      verificationStatus: "UNVERIFIED" | "VERIFIED" | "REJECTED" | "FLAGGED";
+      verificationNotes?: string;
+      isPublicDirectoryVisible?: boolean;
+    }
+  ) =>
+    request<{ user: UserProfile }>(`/users/${id}/verify`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
   updateStatus: (id: string, status: "ACTIVE" | "SUSPENDED" | "DEACTIVATED") =>
     request<{ user: UserProfile }>(`/users/${id}/status`, {
       method: "PATCH",
@@ -561,13 +672,24 @@ export const usersApi = {
     return `${buildUrl("/users/export")}${qs}`;
   },
 
-  downloadExport: async (params?: Record<string, string>, filename = "members.xlsx") => {
-    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
-    const url = buildUrl(`/users/export${qs}`);
+  downloadExport: async (
+    params?: Record<string, string>,
+    userIds?: string[],
+    filename = "members.xlsx"
+  ) => {
+    const isPost = userIds && userIds.length > 0;
+    const url = buildUrl(
+      `/users/export${!isPost && params ? `?${new URLSearchParams(params).toString()}` : ""}`
+    );
     const token = typeof window !== "undefined" ? localStorage.getItem("jc_token") : null;
     const res = await fetch(url, {
+      method: isPost ? "POST" : "GET",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(isPost ? { "Content-Type": "application/json" } : {}),
+      },
       credentials: "include",
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: isPost ? JSON.stringify({ exportType: "SELECTED", userIds, ...params }) : undefined,
     });
     if (!res.ok) throw new Error("सदस्य डेटा डाउनलोड विफल रहा।");
     const blob = await res.blob();
@@ -603,7 +725,7 @@ export const usersApi = {
   previewImport: (formData: FormData) =>
     request<{
       headers: string[];
-      detectedMapping: { nameColumn: string; phoneColumn: string };
+      detectedMapping: Record<string, string>;
       totalRows: number;
       validRows: number;
       duplicateInFileRows: number;
@@ -615,6 +737,8 @@ export const usersApi = {
         mobileNumber: string;
         rawMobile: string;
         role: string;
+        designation?: string;
+        district?: string;
         isValid: boolean;
         isDuplicateInFile: boolean;
         duplicateOfRow: number | null;
@@ -628,6 +752,8 @@ export const usersApi = {
         mobileNumber: string;
         rawMobile: string;
         role: string;
+        designation?: string;
+        district?: string;
         isValid: boolean;
         isDuplicateInFile: boolean;
         duplicateOfRow: number | null;
@@ -641,10 +767,14 @@ export const usersApi = {
       body: formData,
     }),
 
-  confirmImport: (payload: { rows: unknown[]; skipExisting?: boolean }) =>
+  confirmImport: (payload: {
+    rows: unknown[];
+    importMode?: "CREATE_NEW" | "UPDATE_EXISTING" | "CREATE_OR_UPDATE" | "SKIP_MATCHED";
+  }) =>
     request<{
       totalProcessed: number;
       createdCount: number;
+      updatedCount: number;
       skippedCount: number;
       failedCount: number;
       failures: Array<{ rowNumber: number; name?: string; mobile?: string; reason: string }>;
@@ -682,10 +812,58 @@ export const usersApi = {
 };
 
 // ==========================================
-// GEOGRAPHY API
+// DESIGNATION & DEPARTMENT API (Super Admin / Master Data)
+// ==========================================
+export const designationsApi = {
+  getAll: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<DesignationItem[]>(`/designations${qs}`);
+  },
+
+  getById: (id: string) => request<DesignationItem>(`/designations/${id}`),
+
+  create: (payload: Partial<DesignationItem>) =>
+    request<DesignationItem>("/designations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  update: (id: string, payload: Partial<DesignationItem>) =>
+    request<DesignationItem>(`/designations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  delete: (id: string) =>
+    request<{ deactivated?: boolean; deleted?: boolean }>(`/designations/${id}`, {
+      method: "DELETE",
+    }),
+
+  getDepartments: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<DepartmentItem[]>(`/designations/departments${qs}`);
+  },
+
+  createDepartment: (payload: Partial<DepartmentItem>) =>
+    request<DepartmentItem>("/designations/departments", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+};
+
+// ==========================================
+// GEOGRAPHY API (Cascading Master Data)
 // ==========================================
 export const geographyApi = {
-  getConstituencies: () => request<Array<{ _id: string; name: string; district: string; state: string }>>("/geography/constituencies"),
+  getHierarchy: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<GeographyHierarchy>(`/geography/hierarchy${qs}`);
+  },
+
+  getSummary: () => request<Record<string, unknown>>("/geography/summary"),
+
+  getConstituencies: () =>
+    request<Array<{ _id: string; name: string; district: string; state: string }>>("/geography/constituencies"),
 
   createConstituency: (payload: Record<string, unknown>) =>
     request("/geography/constituencies", {
@@ -710,6 +888,21 @@ export const geographyApi = {
     const qs = constituencyId ? `?constituencyId=${encodeURIComponent(constituencyId)}` : "";
     return request<Array<{ _id: string; name: string; address?: string }>>(`/geography/offices${qs}`);
   },
+};
+
+// ==========================================
+// PUBLIC DIRECTORY API
+// ==========================================
+export const directoryApi = {
+  getDirectory: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{
+      members: PublicDirectoryMember[];
+      pagination: { total: number; page: number; limit: number; totalPages: number };
+    }>(`/directory${qs}`);
+  },
+
+  getMemberById: (id: string) => request<PublicDirectoryMember>(`/directory/${id}`),
 };
 
 // ==========================================

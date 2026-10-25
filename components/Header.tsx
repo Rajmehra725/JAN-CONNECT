@@ -23,6 +23,7 @@ import { useAuth, getDashboardPath } from "@/lib/auth-context";
 
 const NAV_ITEMS = [
   { href: "/", label: "होम", labelEn: "Home" },
+  { href: "/directory", label: "निर्देशिका", labelEn: "Directory" },
   { href: "/about", label: "हमारे बारे में", labelEn: "About" },
   { href: "/services", label: "सेवाएँ", labelEn: "Services" },
   { href: "/schemes", label: "योजनाएँ", labelEn: "Schemes" },
