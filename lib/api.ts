@@ -814,7 +814,19 @@ export const usersApi = {
   previewImport: (formData: FormData) =>
     request<{
       headers: string[];
+      sheetNames?: string[];
+      selectedSheet?: string;
+      isMultiPerson?: boolean;
+      multiPersonPairs?: Array<{
+        roleKey: string;
+        roleLabel: string;
+        defaultDesignation: string;
+        category: string;
+        nameCol: string | null;
+        phoneCol: string | null;
+      }>;
       detectedMapping: Record<string, string>;
+      totalFileRows?: number;
       totalRows: number;
       validRows: number;
       duplicateInFileRows: number;
@@ -822,12 +834,14 @@ export const usersApi = {
       invalidRows: number;
       preview: Array<{
         rowNumber: number;
+        personTag?: string;
         fullName: string;
         mobileNumber: string;
         rawMobile: string;
         role: string;
         designation?: string;
         district?: string;
+        gramPanchayat?: string;
         isValid: boolean;
         isDuplicateInFile: boolean;
         duplicateOfRow: number | null;
@@ -837,12 +851,14 @@ export const usersApi = {
       }>;
       rows: Array<{
         rowNumber: number;
+        personTag?: string;
         fullName: string;
         mobileNumber: string;
         rawMobile: string;
         role: string;
         designation?: string;
         district?: string;
+        gramPanchayat?: string;
         isValid: boolean;
         isDuplicateInFile: boolean;
         duplicateOfRow: number | null;
@@ -850,7 +866,7 @@ export const usersApi = {
         existingRecord?: { fullName: string; role: string; accountStatus: string };
         errors: string[];
       }>;
-      errors: Array<{ rowNumber: number; name: string; mobile: string; reason: string }>;
+      errors: Array<{ rowNumber: number; personTag?: string; name: string; mobile: string; reason: string }>;
     }>("/users/import/preview", {
       method: "POST",
       body: formData,

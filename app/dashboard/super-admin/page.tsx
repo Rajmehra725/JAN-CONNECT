@@ -1858,7 +1858,8 @@ export default function SuperAdminDashboardPage() {
           setSuccessMsg(
             `एक्सेल आयात संपन्न: ${summaryResult.createdCount} नए सदस्य पंजीकृत, ${summaryResult.updatedCount} अपडेट, ${summaryResult.skippedCount} छोड़े गए।`
           );
-          fetchUsers(1);
+          setActiveTab("members");
+          fetchUsers(1, { search: "" });
           fetchSummary();
         }}
       />

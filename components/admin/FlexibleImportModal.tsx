@@ -14,6 +14,10 @@ import {
   ArrowRight,
   ShieldCheck,
   RefreshCw,
+  Settings2,
+  ChevronDown,
+  ChevronUp,
+  Users
 } from "lucide-react";
 import { usersApi } from "@/lib/api";
 
@@ -30,9 +34,22 @@ export default function FlexibleImportModal({
 }: FlexibleImportModalProps) {
   const [file, setFile] = useState<File | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [previewData, setPreviewData] = useState<{
     headers: string[];
+    sheetNames?: string[];
+    selectedSheet?: string;
+    isMultiPerson?: boolean;
+    multiPersonPairs?: Array<{
+      roleKey: string;
+      roleLabel: string;
+      defaultDesignation: string;
+      category: string;
+      nameCol: string | null;
+      phoneCol: string | null;
+    }>;
     detectedMapping: Record<string, string>;
+    totalFileRows?: number;
     totalRows: number;
     validRows: number;
     duplicateInFileRows: number;
@@ -40,12 +57,14 @@ export default function FlexibleImportModal({
     invalidRows: number;
     preview: Array<{
       rowNumber: number;
+      personTag?: string;
       fullName: string;
       mobileNumber: string;
       rawMobile: string;
       role: string;
       designation?: string;
       district?: string;
+      gramPanchayat?: string;
       isValid: boolean;
       isDuplicateInFile: boolean;
       duplicateOfRow: number | null;
@@ -54,8 +73,19 @@ export default function FlexibleImportModal({
       errors: string[];
     }>;
     rows: Array<any>;
-    errors: Array<{ rowNumber: number; name?: string; mobile?: string; reason: string }>;
+    errors: Array<{ rowNumber: number; personTag?: string; name: string; mobile: string; reason: string }>;
   } | null>(null);
+
+  // Manual Column Mapping Overrides
+  const [showMappingEditor, setShowMappingEditor] = useState(false);
+  const [customMapping, setCustomMapping] = useState<Record<string, string>>({
+    nameCol: "",
+    phoneCol: "",
+    designationCol: "",
+    districtCol: "",
+    blockCol: "",
+    panchayatCol: "",
+  });
 
   const [importMode, setImportMode] = useState<"CREATE_NEW" | "UPDATE_EXISTING" | "CREATE_OR_UPDATE" | "SKIP_MATCHED">("CREATE_NEW");
   const [confirming, setConfirming] = useState(false);
@@ -71,10 +101,11 @@ export default function FlexibleImportModal({
       setFile(selected);
       setPreviewData(null);
       setErrorMsg("");
+      setShowMappingEditor(false);
     }
   };
 
-  const handleGeneratePreview = async () => {
+  const handleGeneratePreview = async (overrideMapping?: Record<string, string>, sheetToUse?: string) => {
     if (!file) {
       setErrorMsg("कृपया पहले एक एक्सेल (.xlsx, .xls) या .csv फाइल चुनें।");
       return;
@@ -86,9 +117,32 @@ export default function FlexibleImportModal({
       const formData = new FormData();
       formData.append("file", file);
 
+      const mappingToSend = overrideMapping || customMapping;
+      if (Object.values(mappingToSend).some(Boolean)) {
+        formData.append("mapping", JSON.stringify(mappingToSend));
+      }
+
+      const activeSheet = sheetToUse || selectedSheet;
+      if (activeSheet) {
+        formData.append("sheetName", activeSheet);
+      }
+
       const res = await usersApi.previewImport(formData);
       if (res.success && res.data) {
         setPreviewData(res.data);
+        if (res.data.selectedSheet) {
+          setSelectedSheet(res.data.selectedSheet);
+        }
+        if (res.data.detectedMapping) {
+          setCustomMapping({
+            nameCol: res.data.detectedMapping.nameCol || "",
+            phoneCol: res.data.detectedMapping.phoneCol || "",
+            designationCol: res.data.detectedMapping.designationCol || "",
+            districtCol: res.data.detectedMapping.districtCol || "",
+            blockCol: res.data.detectedMapping.blockCol || "",
+            panchayatCol: res.data.detectedMapping.panchayatCol || "",
+          });
+        }
       } else {
         setErrorMsg(res.message || "एक्सेल पूर्वावलोकन तैयार करने में विफलता।");
       }
@@ -112,6 +166,12 @@ export default function FlexibleImportModal({
       });
 
       if (res.success && res.data) {
+        // If 0 were created/updated and some failed, notify with error
+        if (res.data.createdCount === 0 && res.data.updatedCount === 0 && (res.data.failedCount || 0) > 0) {
+          setErrorMsg(`आयात विफल: कोई भी नया सदस्य सहेजा नहीं जा सका। (${res.data.failedCount} रिकॉर्ड त्रुटिपूर्ण रहे)`);
+          return;
+        }
+
         onSuccess({
           createdCount: res.data.createdCount || 0,
           updatedCount: res.data.updatedCount || 0,
@@ -151,9 +211,9 @@ export default function FlexibleImportModal({
               <FileSpreadsheet className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base sm:text-lg">एक्सेल से सदस्य आयात (Bulk Member Import)</h3>
+              <h3 className="font-bold text-base sm:text-lg">यूनिवर्सल एक्सेल सदस्य ऑटो-आयात (Universal Auto-Import)</h3>
               <p className="text-xs text-orange-100">
-                2-कॉलम (नाम + मोबाइल) या विस्तृत स्प्रेडशीट का समर्थन | 4 आयात मोड उपलब्ध
+                2-कॉलम, विस्तृत स्प्रेडशीट एवं बहु-व्यक्ति पंचायत प्रारूप (सरपंच, सचिव, रोजगार सहायक) का पूर्ण समर्थन
               </p>
             </div>
           </div>
@@ -166,7 +226,7 @@ export default function FlexibleImportModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 max-h-[70vh] overflow-y-auto space-y-5">
+        <div className="p-6 max-h-[72vh] overflow-y-auto space-y-5">
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -196,7 +256,7 @@ export default function FlexibleImportModal({
                 </h4>
                 <p className="text-xs text-slate-500 max-w-md mx-auto">
                   आपकी स्प्रेडशीट में केवल <strong>नाम</strong> और <strong>मोबाइल नंबर</strong> होना पर्याप्त है।
-                  हिंदी और अंग्रेजी दोनों प्रारूप समर्थित हैं।
+                  हिंदी एवं अंग्रेजी हेडर, 2-कॉलम और ग्राम पंचायत बहु-व्यक्ति प्रारूप स्वचालित रूप से पहचाने जाएंगे।
                 </p>
                 {file && (
                   <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold">
@@ -227,7 +287,7 @@ export default function FlexibleImportModal({
                 <button
                   type="button"
                   disabled={!file || previewing}
-                  onClick={handleGeneratePreview}
+                  onClick={() => handleGeneratePreview()}
                   className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold text-white bg-orange-600 hover:bg-orange-700 rounded-xl shadow-sm disabled:opacity-50 transition-colors"
                 >
                   {previewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowRight className="w-4 h-4" />}
@@ -237,35 +297,216 @@ export default function FlexibleImportModal({
             </div>
           )}
 
-          {/* STEP 2: Preview & Metrics */}
+          {/* STEP 2: Preview, Multi-Person Detection & Mapping Controls */}
           {previewData && (
             <div className="space-y-5 animate-in fade-in">
+              {/* Multi-Person Detection Banner */}
+              {previewData.isMultiPerson && previewData.multiPersonPairs && (
+                <div className="p-4 bg-amber-50/90 border border-amber-300 rounded-xl text-amber-950 text-xs space-y-1.5">
+                  <div className="flex items-center gap-2 font-bold text-amber-900">
+                    <Users className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>🌾 बहु-व्यक्ति ग्राम पंचायत प्रारूप पहचाना गया (Multi-Person Panchayat Layout Detected)</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-800">
+                    इस स्प्रेडशीट में एक ही पंक्ति पर कई पदाधिकारियों के कॉलम पाए गए हैं। सिस्टम प्रत्येक पंक्ति से प्रत्येक पदाधिकारी का अलग सदस्य रिकॉर्ड बनाएगा तथा पंचायत/स्थान की जानकारी साझा करेगा:
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {previewData.multiPersonPairs.map((p) => (
+                      <span key={p.roleKey} className="px-2.5 py-1 rounded-md bg-amber-100 text-amber-900 border border-amber-300 font-semibold text-[11px]">
+                        ✓ {p.roleLabel}: {p.nameCol || "नाम अनुपस्थित"} | {p.phoneCol || "फोन अनुपस्थित"}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="text-[11px] text-amber-900 font-semibold pt-1">
+                    कुल फ़ाइल पंक्तियाँ: <strong>{previewData.totalFileRows}</strong> ➔ कुल जनरेटेड सदस्य: <strong>{previewData.totalRows}</strong>
+                  </div>
+                </div>
+              )}
+
+              {/* Sheet Selector (If multi-sheet) */}
+              {previewData.sheetNames && previewData.sheetNames.length > 1 && (
+                <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
+                  <span className="font-semibold text-slate-700">वर्कशीट चुनें (Select Sheet):</span>
+                  <select
+                    value={selectedSheet}
+                    onChange={(e) => {
+                      const newSheet = e.target.value;
+                      setSelectedSheet(newSheet);
+                      handleGeneratePreview(undefined, newSheet);
+                    }}
+                    className="border border-slate-300 rounded-lg px-2.5 py-1 text-xs bg-white text-slate-800"
+                  >
+                    {previewData.sheetNames.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Metric Badges */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-center">
                 <div className="p-3 rounded-xl bg-slate-100 border border-slate-200">
-                  <div className="text-xl font-extrabold text-slate-800">{previewData.totalRows}</div>
-                  <div className="text-[11px] font-semibold text-slate-500">कुल पंक्तियां (Total)</div>
+                  <div className="text-xl font-extrabold text-slate-800">{previewData.totalFileRows || previewData.totalRows}</div>
+                  <div className="text-[10px] font-semibold text-slate-500">फ़ाइल पंक्तियाँ</div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+                  <div className="text-xl font-extrabold text-indigo-700">{previewData.totalRows}</div>
+                  <div className="text-[10px] font-semibold text-indigo-700">कुल सदस्य रिकॉर्ड्स</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200">
                   <div className="text-xl font-extrabold text-emerald-700">{previewData.validRows}</div>
-                  <div className="text-[11px] font-semibold text-emerald-700">वैध एवं नए (Valid New)</div>
+                  <div className="text-[10px] font-semibold text-emerald-700">वैध एवं नए (Valid New)</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
                   <div className="text-xl font-extrabold text-amber-700">{previewData.existingInDbRows}</div>
-                  <div className="text-[11px] font-semibold text-amber-700">DB में मौजूद (In DB)</div>
+                  <div className="text-[10px] font-semibold text-amber-700">DB में मौजूद</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-blue-50 border border-blue-200">
                   <div className="text-xl font-extrabold text-blue-700">{previewData.duplicateInFileRows}</div>
-                  <div className="text-[11px] font-semibold text-blue-700">फाइल डुप्लीकेट</div>
+                  <div className="text-[10px] font-semibold text-blue-700">फाइल डुप्लीकेट</div>
                 </div>
 
                 <div className="p-3 rounded-xl bg-red-50 border border-red-200">
                   <div className="text-xl font-extrabold text-red-700">{previewData.invalidRows}</div>
-                  <div className="text-[11px] font-semibold text-red-700">अमान्य (Invalid)</div>
+                  <div className="text-[10px] font-semibold text-red-700">अमान्य (Invalid)</div>
                 </div>
+              </div>
+
+              {/* Collapsible Column Mapping Customizer */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+                <button
+                  type="button"
+                  onClick={() => setShowMappingEditor(!showMappingEditor)}
+                  className="w-full flex items-center justify-between p-3.5 bg-slate-50 hover:bg-slate-100 text-xs font-bold text-slate-700 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Settings2 className="w-4 h-4 text-orange-600" />
+                    <span>कॉलम मैपिंग समीक्षा एवं संशोधन (Review / Customize Column Mapping)</span>
+                  </div>
+                  {showMappingEditor ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+
+                {showMappingEditor && (
+                  <div className="p-4 border-t border-slate-200 space-y-3 bg-slate-50/50 text-xs">
+                    <p className="text-[11px] text-slate-500">
+                      यदि सिस्टम द्वारा पहचाने गए कॉलम गलत हैं, तो आप नीचे से अपनी स्प्रेडशीट के सही कॉलम चुन सकते हैं:
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">नाम कॉलम (Name Column)</label>
+                        <select
+                          value={customMapping.nameCol}
+                          onChange={(e) => setCustomMapping({ ...customMapping, nameCol: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg p-1.5 text-xs bg-white text-slate-800"
+                        >
+                          <option value="">— स्वतः पहचान —</option>
+                          {previewData.headers.map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">मोबाइल नंबर (Mobile Column)</label>
+                        <select
+                          value={customMapping.phoneCol}
+                          onChange={(e) => setCustomMapping({ ...customMapping, phoneCol: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg p-1.5 text-xs bg-white text-slate-800"
+                        >
+                          <option value="">— स्वतः पहचान —</option>
+                          {previewData.headers.map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">पदनाम (Designation Column)</label>
+                        <select
+                          value={customMapping.designationCol}
+                          onChange={(e) => setCustomMapping({ ...customMapping, designationCol: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg p-1.5 text-xs bg-white text-slate-800"
+                        >
+                          <option value="">— स्वतः पहचान / वैकल्पिक —</option>
+                          {previewData.headers.map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">ज़िला (District Column)</label>
+                        <select
+                          value={customMapping.districtCol}
+                          onChange={(e) => setCustomMapping({ ...customMapping, districtCol: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg p-1.5 text-xs bg-white text-slate-800"
+                        >
+                          <option value="">— स्वतः पहचान / वैकल्पिक —</option>
+                          {previewData.headers.map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">ब्लॉक / तहसील (Block Column)</label>
+                        <select
+                          value={customMapping.blockCol}
+                          onChange={(e) => setCustomMapping({ ...customMapping, blockCol: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg p-1.5 text-xs bg-white text-slate-800"
+                        >
+                          <option value="">— स्वतः पहचान / वैकल्पिक —</option>
+                          {previewData.headers.map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">ग्राम पंचायत / वार्ड (Panchayat Column)</label>
+                        <select
+                          value={customMapping.panchayatCol}
+                          onChange={(e) => setCustomMapping({ ...customMapping, panchayatCol: e.target.value })}
+                          className="w-full border border-slate-300 rounded-lg p-1.5 text-xs bg-white text-slate-800"
+                        >
+                          <option value="">— स्वतः पहचान / वैकल्पिक —</option>
+                          {previewData.headers.map((h) => (
+                            <option key={h} value={h}>
+                              {h}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleGeneratePreview()}
+                        className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-bold rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>मैपिंग लागू करें एवं पूर्वावलोकन अपडेट करें</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Import Mode Selector */}
@@ -392,14 +633,14 @@ export default function FlexibleImportModal({
                         <th className="py-2.5 px-3">पंक्ति</th>
                         <th className="py-2.5 px-3">नाम (Name)</th>
                         <th className="py-2.5 px-3">मोबाइल (Mobile)</th>
-                        <th className="py-2.5 px-3">पद / ज़िला</th>
-                        <th className="py-2.5 px-3">स्थिति (Validation)</th>
+                        <th className="py-2.5 px-3">पद / ज़िला / पंचायत</th>
+                        <th className="py-2.5 px-3">सत्यापन स्थिति (Validation)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {previewData.preview.map((row) => (
+                      {previewData.preview.map((row, idx) => (
                         <tr
-                          key={row.rowNumber}
+                          key={`${row.rowNumber}-${idx}`}
                           className={
                             !row.isValid
                               ? "bg-red-50/50"
@@ -408,11 +649,18 @@ export default function FlexibleImportModal({
                               : "hover:bg-slate-50"
                           }
                         >
-                          <td className="py-2 px-3 font-mono text-slate-500">#{row.rowNumber}</td>
+                          <td className="py-2 px-3 font-mono text-slate-500">
+                            #{row.rowNumber} {row.personTag && <span className="text-[10px] text-orange-600 font-bold block">{row.personTag}</span>}
+                          </td>
                           <td className="py-2 px-3 font-medium text-slate-800">{row.fullName || "—"}</td>
                           <td className="py-2 px-3 font-mono text-slate-700">{row.mobileNumber}</td>
                           <td className="py-2 px-3 text-slate-500">
-                            {row.designation || "—"} {row.district ? `(${row.district})` : ""}
+                            <span className="font-semibold text-slate-700">{row.designation || "—"}</span>
+                            {(row.district || row.gramPanchayat) && (
+                              <span className="text-[11px] text-slate-400 block">
+                                {[row.gramPanchayat, row.district].filter(Boolean).join(", ")}
+                              </span>
+                            )}
                           </td>
                           <td className="py-2 px-3">
                             {row.isValid && !row.isExistingInDb && (
@@ -457,6 +705,7 @@ export default function FlexibleImportModal({
               onClick={() => {
                 setPreviewData(null);
                 setFile(null);
+                setShowMappingEditor(false);
               }}
               className="text-xs font-semibold text-slate-600 hover:text-slate-900 flex items-center gap-1"
             >
