@@ -39,6 +39,7 @@ export const metadata: Metadata = {
 
 import { AuthProvider } from "@/lib/auth-context";
 import TawkChat from "@/components/TawkChat";
+import JanBot from "@/components/JanBot";
 
 export default function RootLayout({
   children,
@@ -57,6 +58,7 @@ export default function RootLayout({
           <div className="flex-1">{children}</div>
           <Footer />
           <TawkChat />
+          <JanBot />
         </AuthProvider>
       </body>
     </html>

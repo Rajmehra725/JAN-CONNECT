@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
+
 import {
   Search,
   Filter,
@@ -127,8 +126,6 @@ export default function PublicDirectoryPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Header />
-
       <main className="flex-1 pb-16">
         {/* Hero Section */}
         <div className="bg-linear-to-b from-orange-600 via-orange-500 to-amber-500 text-white py-12 px-4 sm:px-6 lg:px-8">
@@ -450,8 +447,6 @@ export default function PublicDirectoryPage() {
           )}
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }

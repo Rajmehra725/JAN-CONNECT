@@ -36,6 +36,9 @@ import {
   Briefcase,
   ChevronDown,
   Building2,
+  Bot,
+  ShieldCheck,
+  Mail,
 } from "lucide-react";
 import {
   reportsApi,
@@ -57,13 +60,42 @@ import UserFormModal from "@/components/admin/UserFormModal";
 import VerifyUserModal from "@/components/admin/VerifyUserModal";
 import FlexibleImportModal from "@/components/admin/FlexibleImportModal";
 import DesignationManagementTab from "@/components/admin/DesignationManagementTab";
+import FaqManagementTab from "@/components/admin/FaqManagementTab";
+import DataQualityTab from "@/components/admin/DataQualityTab";
+import AuditLogsTab from "@/components/admin/AuditLogsTab";
+import SystemHealthTab from "@/components/admin/SystemHealthTab";
+import AnnouncementsTab from "@/components/admin/AnnouncementsTab";
+import { Database, Bell } from "lucide-react";
+
+export type SuperAdminTab =
+  | "overview"
+  | "members"
+  | "quality"
+  | "designations"
+  | "complaints"
+  | "bot"
+  | "announcements"
+  | "audit"
+  | "system";
 
 export default function SuperAdminDashboardPage() {
   const { user, loading: authLoading } = useRequireAuth(["SUPER_ADMIN"]);
   const { logout } = useAuth();
 
   // Navigation tab
-  const [activeTab, setActiveTab] = useState<"overview" | "members" | "designations" | "complaints" | "security">("overview");
+  const [activeTab, setActiveTab] = useState<SuperAdminTab>("overview");
+
+  // Page size & Sorting in Member Management
+  const [pageSize, setPageSize] = useState(25);
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  // Overview Filters
+  const [overviewStartDate, setOverviewStartDate] = useState("");
+  const [overviewEndDate, setOverviewEndDate] = useState("");
+  const [overviewDistrict, setOverviewDistrict] = useState("ALL");
+  const [overviewDesignation, setOverviewDesignation] = useState("ALL");
+  const [applyingOverviewFilter, setApplyingOverviewFilter] = useState(false);
 
   // Summary & Stats
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -139,9 +171,9 @@ export default function SuperAdminDashboardPage() {
   // ========================================================
   // DATA FETCHING HOOKS
   // ========================================================
-  const fetchSummary = useCallback(async () => {
+  const fetchSummary = useCallback(async (filters?: Record<string, string>) => {
     try {
-      const sumRes = await reportsApi.getSummary();
+      const sumRes = await reportsApi.getSummary(filters);
       if (sumRes.success && sumRes.data) {
         setSummary(sumRes.data);
       }
@@ -166,13 +198,25 @@ export default function SuperAdminDashboardPage() {
   }, []);
 
   const fetchUsers = useCallback(
-    async (page = 1, customFilters?: Partial<FilterState>) => {
+    async (
+      page = 1,
+      customFilters?: Partial<FilterState>,
+      customLimit?: number,
+      customSortBy?: string,
+      customSortOrder?: "asc" | "desc"
+    ) => {
       setLoadingUsers(true);
       try {
         const active = { ...filterState, ...(customFilters || {}) };
+        const activeLimit = customLimit || pageSize;
+        const activeSortBy = customSortBy || sortBy;
+        const activeSortOrder = customSortOrder || sortOrder;
+
         const params: Record<string, string> = {
           page: String(page),
-          limit: "15",
+          limit: String(activeLimit),
+          sortBy: activeSortBy,
+          sortOrder: activeSortOrder,
         };
 
         if (active.search.trim()) params.search = active.search.trim();
@@ -209,7 +253,7 @@ export default function SuperAdminDashboardPage() {
         setLoadingUsers(false);
       }
     },
-    [filterState]
+    [filterState, pageSize, sortBy, sortOrder]
   );
 
   const fetchComplaints = useCallback(
@@ -549,46 +593,62 @@ export default function SuperAdminDashboardPage() {
         )}
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-800 pb-2 space-x-2 overflow-x-auto">
+        <div className="flex border-b border-slate-800 pb-2 space-x-2 overflow-x-auto no-scrollbar">
           <button
             onClick={() => setActiveTab("overview")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === "overview"
                 ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
             <Activity size={14} />
-            सिस्टम अवलोकन (Overview)
+            <span>अवलोकन (Overview)</span>
           </button>
           <button
             onClick={() => {
               setActiveTab("members");
               fetchUsers(1);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === "members"
                 ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
             <Users size={14} />
-            सदस्य निर्देशिका (Members & Staff)
-            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
+            <span>सदस्य निर्देशिका</span>
+            <span className="rounded-full bg-slate-800 px-1.5 py-0.2 text-[10px] text-slate-300">
               {memberTotalCount || summary?.users.total || 0}
             </span>
           </button>
           <button
+            onClick={() => setActiveTab("quality")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === "quality"
+                ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            <UserCheck size={14} />
+            <span>डेटा गुणवत्ता</span>
+            {Boolean((summary?.users.unverified || 0) + (summary?.users.missingDesignation || 0)) && (
+              <span className="rounded-full bg-amber-950 border border-amber-700 px-1.5 py-0.2 text-[10px] text-amber-400 font-bold">
+                {(summary?.users.unverified || 0) + (summary?.users.missingDesignation || 0)}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab("designations")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === "designations"
                 ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
             <Briefcase size={14} />
-            पदनाम एवं विभाग (Designations)
-            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
+            <span>पद एवं विभाग</span>
+            <span className="rounded-full bg-slate-800 px-1.5 py-0.2 text-[10px] text-slate-300">
               {designations.length}
             </span>
           </button>
@@ -597,50 +657,291 @@ export default function SuperAdminDashboardPage() {
               setActiveTab("complaints");
               fetchComplaints(1);
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
               activeTab === "complaints"
                 ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
             <FileText size={14} />
-            शिकायत निवारण (Complaints)
-            <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-300">
+            <span>शिकायत निवारण</span>
+            <span className="rounded-full bg-slate-800 px-1.5 py-0.2 text-[10px] text-slate-300">
               {summary?.complaints.total ?? 0}
             </span>
           </button>
           <button
-            onClick={() => setActiveTab("security")}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
-              activeTab === "security"
+            onClick={() => setActiveTab("bot")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === "bot"
                 ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
             }`}
           >
-            <Shield size={14} />
-            सुरक्षा व ऑडिट (Security)
+            <Bot size={14} />
+            <span>स्मार्ट बॉट व FAQ</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("announcements")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === "announcements"
+                ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            <Bell size={14} />
+            <span>सूचनाएं</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("audit")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === "audit"
+                ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            <ShieldCheck size={14} />
+            <span>ऑडिट लॉग्स</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("system")}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+              activeTab === "system"
+                ? "bg-orange-600 text-white shadow-md shadow-orange-600/20"
+                : "text-slate-400 hover:text-white hover:bg-slate-800"
+            }`}
+          >
+            <Database size={14} />
+            <span>स्वास्थ्य व बैकअप</span>
           </button>
         </div>
 
         {/* ========================================================
-            TAB 1: SYSTEM OVERVIEW
+            TAB 1: SYSTEM OVERVIEW / CONTROL CENTER
            ======================================================== */}
         {activeTab === "overview" && (
           <div className="space-y-6">
+            {/* Filter Bar: Date Range, District, Designation */}
+            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 shadow-xl">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4 text-orange-400" />
+                  <span className="text-xs font-bold text-white uppercase tracking-wider">
+                    डैशबोर्ड विश्लेषण फ़िल्टर (Analytics Filters)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      setApplyingOverviewFilter(true);
+                      const f: Record<string, string> = {};
+                      if (overviewStartDate) f.startDate = overviewStartDate;
+                      if (overviewEndDate) f.endDate = overviewEndDate;
+                      if (overviewDistrict !== "ALL") f.district = overviewDistrict;
+                      if (overviewDesignation !== "ALL") f.designation = overviewDesignation;
+                      await fetchSummary(f);
+                      setApplyingOverviewFilter(false);
+                    }}
+                    disabled={applyingOverviewFilter}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-orange-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-orange-500 disabled:opacity-50"
+                  >
+                    {applyingOverviewFilter ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                    <span>फ़िल्टर लागू करें</span>
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setOverviewStartDate("");
+                      setOverviewEndDate("");
+                      setOverviewDistrict("ALL");
+                      setOverviewDesignation("ALL");
+                      await fetchSummary();
+                    }}
+                    className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700"
+                  >
+                    रीसेट
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">आरंभ तिथि (Start Date)</label>
+                  <input
+                    type="date"
+                    value={overviewStartDate}
+                    onChange={(e) => setOverviewStartDate(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-white focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">अंतिम तिथि (End Date)</label>
+                  <input
+                    type="date"
+                    value={overviewEndDate}
+                    onChange={(e) => setOverviewEndDate(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-white focus:border-orange-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">जिला (District)</label>
+                  <select
+                    value={overviewDistrict}
+                    onChange={(e) => setOverviewDistrict(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-white focus:border-orange-500"
+                  >
+                    <option value="ALL">सभी जिले (All Districts)</option>
+                    {(hierarchy?.districts || []).map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">पदनाम (Designation)</label>
+                  <select
+                    value={overviewDesignation}
+                    onChange={(e) => setOverviewDesignation(e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-800/80 px-3 py-1.5 text-white focus:border-orange-500"
+                  >
+                    <option value="ALL">सभी पद (All Designations)</option>
+                    {designations.map((des) => (
+                      <option key={des._id} value={des.titleHi || des.title}>
+                        {des.titleHi ? `${des.titleHi} (${des.title})` : des.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {/* Row 1: Member Accounts Metrics (Clickable) */}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div
                 onClick={() => {
-                  setFilterState((prev) => ({ ...prev, role: "ALL" }));
+                  setFilterState((prev) => ({ ...prev, role: "ALL", status: "ALL" }));
                   setActiveTab("members");
+                  fetchUsers(1, { role: "ALL", status: "ALL" });
                 }}
-                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-orange-500/50"
+                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-orange-500/50 hover:bg-slate-800/40"
               >
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold uppercase tracking-wider text-slate-400">कुल पंजीकृत सदस्य</p>
                   <Users className="h-5 w-5 text-orange-500" />
                 </div>
                 <h3 className="mt-3 text-2xl font-black text-white">{summary?.users.total ?? 0}</h3>
-                <p className="mt-1 text-[11px] text-slate-500">सभी भूमिकाओं के नागरिक व कार्यकर्ता</p>
+                <p className="mt-1 text-[11px] text-slate-400">क्लिक कर सदस्य सूची देखें &rarr;</p>
+              </div>
+
+              <div
+                onClick={() => {
+                  setFilterState((prev) => ({ ...prev, status: "ACTIVE" }));
+                  setActiveTab("members");
+                  fetchUsers(1, { status: "ACTIVE" });
+                }}
+                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-emerald-500/50 hover:bg-slate-800/40"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">सक्रिय सदस्य (Active)</p>
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                </div>
+                <h3 className="mt-3 text-2xl font-black text-emerald-400">{summary?.users.active ?? 0}</h3>
+                <p className="mt-1 text-[11px] text-slate-400">सक्रिय एवं कार्यरत खाते</p>
+              </div>
+
+              <div
+                onClick={() => setActiveTab("system")}
+                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-rose-500/50 hover:bg-slate-800/40"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">निष्क्रिय / डिलीटेड</p>
+                  <AlertTriangle className="h-5 w-5 text-rose-400" />
+                </div>
+                <h3 className="mt-3 text-2xl font-black text-rose-400">
+                  {(summary?.users.deactivated || 0) + (summary?.users.suspended || 0)}
+                </h3>
+                <p className="mt-1 text-[11px] text-slate-400">रिकवरी केंद्र से पुनर्प्राप्त करें &rarr;</p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">आज नए पंजीकरण</p>
+                  <TrendingUp className="h-5 w-5 text-blue-400" />
+                </div>
+                <h3 className="mt-3 text-2xl font-black text-blue-400">{summary?.users.todayRegistrations ?? 0}</h3>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  चयनित अवधि: {summary?.users.periodRegistrations ?? summary?.users.todayRegistrations ?? 0}
+                </p>
+              </div>
+            </div>
+
+            {/* Row 2: Data Quality & Verification Cards (Clickable to Quality Tab) */}
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div
+                onClick={() => setActiveTab("quality")}
+                className="cursor-pointer rounded-2xl border border-amber-900/40 bg-amber-950/20 p-5 shadow-sm transition hover:border-amber-500 hover:bg-amber-950/40"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-400">सत्यापन शेष (Unverified)</p>
+                  <UserCheck className="h-5 w-5 text-amber-400" />
+                </div>
+                <h3 className="mt-3 text-2xl font-black text-amber-300">{summary?.users.unverified ?? 0}</h3>
+                <p className="mt-1 text-[11px] text-amber-400/80">समीक्षा केंद्र खोलें &rarr;</p>
+              </div>
+
+              <div
+                onClick={() => setActiveTab("quality")}
+                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-blue-500/50"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">पद आवंटित नहीं</p>
+                  <Briefcase className="h-5 w-5 text-blue-400" />
+                </div>
+                <h3 className="mt-3 text-2xl font-black text-blue-300">{summary?.users.missingDesignation ?? 0}</h3>
+                <p className="mt-1 text-[11px] text-slate-400">Missing Designation</p>
+              </div>
+
+              <div
+                onClick={() => setActiveTab("quality")}
+                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-purple-500/50"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">अपूर्ण भौगोलिक पता</p>
+                  <MapPin className="h-5 w-5 text-purple-400" />
+                </div>
+                <h3 className="mt-3 text-2xl font-black text-purple-300">{summary?.users.missingLocation ?? 0}</h3>
+                <p className="mt-1 text-[11px] text-slate-400">Missing District / Ward</p>
+              </div>
+
+              <div
+                onClick={() => setActiveTab("quality")}
+                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-emerald-500/50"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">संपर्क विवरण अपूर्ण</p>
+                  <Mail className="h-5 w-5 text-emerald-400" />
+                </div>
+                <h3 className="mt-3 text-2xl font-black text-emerald-300">{summary?.users.incompleteContact ?? 0}</h3>
+                <p className="mt-1 text-[11px] text-slate-400">Missing Email / Contact</p>
+              </div>
+            </div>
+
+            {/* Row 3: Complaint Operations & Bot Insights (Clickable) */}
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div
+                onClick={() => {
+                  setComplaintStatusFilter("ALL");
+                  setActiveTab("complaints");
+                }}
+                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-orange-500/50"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">कुल शिकायतें</p>
+                  <FileText className="h-5 w-5 text-orange-400" />
+                </div>
+                <h3 className="mt-3 text-2xl font-black text-white">{summary?.complaints.total ?? 0}</h3>
+                <p className="mt-1 text-[11px] text-slate-400">
+                  सफलता दर: {summary?.complaints.resolutionRate ?? 0}%
+                </p>
               </div>
 
               <div
@@ -652,16 +953,10 @@ export default function SuperAdminDashboardPage() {
               >
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold uppercase tracking-wider text-slate-400">निस्तारित शिकायतें</p>
-                  <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+                  <CheckCircle2 className="h-5 w-5 text-emerald-400" />
                 </div>
                 <h3 className="mt-3 text-2xl font-black text-emerald-400">{summary?.complaints.resolved ?? 0}</h3>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  सफलता दर:{" "}
-                  {summary?.complaints.total
-                    ? Math.round(((summary?.complaints.resolved || 0) / summary.complaints.total) * 100)
-                    : 0}
-                  %
-                </p>
+                <p className="mt-1 text-[11px] text-slate-400">सफलतापूर्वक हल</p>
               </div>
 
               <div
@@ -673,25 +968,113 @@ export default function SuperAdminDashboardPage() {
               >
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold uppercase tracking-wider text-slate-400">प्रक्रियाधीन शिकायतें</p>
-                  <Clock className="h-5 w-5 text-blue-500" />
+                  <Clock className="h-5 w-5 text-blue-400" />
                 </div>
                 <h3 className="mt-3 text-2xl font-black text-blue-400">{summary?.complaints.inProgress ?? 0}</h3>
-                <p className="mt-1 text-[11px] text-slate-500">वर्तमान में प्रगति पर</p>
+                <p className="mt-1 text-[11px] text-slate-400">वर्तमान में प्रगति पर</p>
               </div>
 
               <div
-                onClick={() => {
-                  setFilterState((prev) => ({ ...prev, role: "CITIZEN" }));
-                  setActiveTab("members");
-                }}
-                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-purple-500/50"
+                onClick={() => setActiveTab("bot")}
+                className="cursor-pointer rounded-2xl border border-slate-800 bg-slate-900 p-5 shadow-sm transition hover:border-amber-500/50"
               >
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">सक्रिय नागरिक</p>
-                  <Shield className="h-5 w-5 text-purple-500" />
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">बॉट प्रश्न (अनुत्तरित)</p>
+                  <Bot className="h-5 w-5 text-amber-400" />
                 </div>
-                <h3 className="mt-3 text-2xl font-black text-purple-400">{summary?.users.citizens ?? 0}</h3>
-                <p className="mt-1 text-[11px] text-slate-500">सत्यापित नागरिक खाते</p>
+                <h3 className="mt-3 text-2xl font-black text-amber-400">
+                  {summary?.botStats?.totalQueries ?? 0}{" "}
+                  <span className="text-xs font-semibold text-rose-400">
+                    ({summary?.botStats?.unansweredCount ?? 0} अनुत्तरित)
+                  </span>
+                </h3>
+                <p className="mt-1 text-[11px] text-slate-400">FAQ बॉट केंद्र खोलें &rarr;</p>
+              </div>
+            </div>
+
+            {/* Row 4: Demographic Breakdowns (Real Database Aggregates) */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Role Distribution */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl space-y-4">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-orange-400" />
+                  <span>भूमिका अनुसार सदस्य (By Role)</span>
+                </h4>
+                <div className="space-y-2 text-xs">
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/60">
+                    <span className="text-slate-300 font-medium">नागरिक (Citizen)</span>
+                    <span className="font-bold text-white">{summary?.users.citizens ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/60">
+                    <span className="text-slate-300 font-medium">बूथ कार्यकर्ता (Booth Worker)</span>
+                    <span className="font-bold text-white">{summary?.users.boothWorkers ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/60">
+                    <span className="text-slate-300 font-medium">कार्यालय स्टाफ (PA / Staff)</span>
+                    <span className="font-bold text-white">{summary?.users.staff ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/60">
+                    <span className="text-slate-300 font-medium">जनप्रतिनिधि (Politicians)</span>
+                    <span className="font-bold text-white">{summary?.users.politicians ?? 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/60">
+                    <span className="text-slate-300 font-medium">मुख्य व्यवस्थापक (Super Admin)</span>
+                    <span className="font-bold text-white">{summary?.users.superAdmins ?? 1}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Area & Top Districts Breakdown */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl space-y-4">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <MapPin className="w-4 h-4 text-purple-400" />
+                  <span>भौगोलिक वितरण (Geographical Distribution)</span>
+                </h4>
+                <div className="space-y-2 text-xs">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="p-3 bg-slate-800/60 rounded-xl text-center">
+                      <p className="text-[11px] text-slate-400">ग्रामीण (Rural)</p>
+                      <p className="text-lg font-black text-white mt-0.5">{summary?.distribution?.byArea?.rural ?? 0}</p>
+                    </div>
+                    <div className="p-3 bg-slate-800/60 rounded-xl text-center">
+                      <p className="text-[11px] text-slate-400">शहरी (Urban)</p>
+                      <p className="text-lg font-black text-white mt-0.5">{summary?.distribution?.byArea?.urban ?? 0}</p>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-slate-800">
+                    <p className="text-[11px] font-bold text-slate-400 uppercase mb-2">शीर्ष जिले (Top Districts)</p>
+                    {(summary?.distribution?.byDistrict || []).length > 0 ? (
+                      summary?.distribution?.byDistrict.map((d, i) => (
+                        <div key={i} className="flex justify-between py-1 border-b border-slate-800/40 text-[11px]">
+                          <span className="text-slate-300">{d.district}</span>
+                          <span className="font-bold text-orange-400">{d.count} सदस्य</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-[11px] text-slate-500">कोई डेटा उपलब्ध नहीं।</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Top Designations Breakdown */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl space-y-4">
+                <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Briefcase className="w-4 h-4 text-emerald-400" />
+                  <span>शीर्ष पदनाम (Top Designations)</span>
+                </h4>
+                <div className="space-y-2 text-xs">
+                  {(summary?.distribution?.byDesignation || []).length > 0 ? (
+                    summary?.distribution?.byDesignation.map((d, i) => (
+                      <div key={i} className="flex justify-between p-2.5 bg-slate-800/60 rounded-xl text-[11px]">
+                        <span className="font-semibold text-slate-200 truncate max-w-[70%]">{d.title}</span>
+                        <span className="font-bold text-emerald-400">{d.count}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="py-6 text-center text-xs text-slate-500">कोई पदनाम आवंटन नहीं।</p>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -874,6 +1257,66 @@ export default function SuperAdminDashboardPage() {
                   <UserPlus className="mr-1.5 h-4 w-4" />
                   नया सदस्य बनाएं
                 </button>
+              </div>
+            </div>
+
+            {/* Table Sorting & Density Controls Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 px-4 py-3 rounded-2xl text-xs">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-1.5 text-slate-300">
+                  <span className="font-semibold text-slate-400">क्रमबद्ध (Sort by):</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => {
+                      const newSort = e.target.value;
+                      setSortBy(newSort);
+                      fetchUsers(1, undefined, pageSize, newSort, sortOrder);
+                    }}
+                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-white focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="createdAt">पंजीकरण दिनांक (Created At)</option>
+                    <option value="fullName">नाम (Full Name)</option>
+                    <option value="mobileNumber">मोबाइल नंबर (Mobile)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-slate-300">
+                  <span className="font-semibold text-slate-400">दिशा (Order):</span>
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => {
+                      const newOrder = e.target.value as "asc" | "desc";
+                      setSortOrder(newOrder);
+                      fetchUsers(1, undefined, pageSize, sortBy, newOrder);
+                    }}
+                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-white focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value="desc">अवरोही / नवीनतम प्रथम (Desc)</option>
+                    <option value="asc">आरोही / वर्णमाला (Asc)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-slate-300">
+                  <span className="font-semibold text-slate-400">प्रति पृष्ठ (Limit):</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      const newSize = Number(e.target.value);
+                      setPageSize(newSize);
+                      fetchUsers(1, undefined, newSize, sortBy, sortOrder);
+                    }}
+                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1 text-xs text-white focus:border-orange-500 focus:outline-none"
+                  >
+                    <option value={10}>10 सदस्य</option>
+                    <option value={25}>25 सदस्य</option>
+                    <option value={50}>50 सदस्य</option>
+                    <option value={100}>100 सदस्य</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-slate-400">
+                कुल परिणाम: <strong className="text-white">{memberTotalCount}</strong> सदस्य
               </div>
             </div>
 
@@ -1097,6 +1540,23 @@ export default function SuperAdminDashboardPage() {
         )}
 
         {/* ========================================================
+            TAB: DATA QUALITY CENTER
+           ======================================================== */}
+        {activeTab === "quality" && (
+          <DataQualityTab
+            onEditUser={(u) => {
+              setEditingUserTarget(u);
+              setUserModalMode("EDIT");
+              setUserModalOpen(true);
+            }}
+            onVerifyUser={(u) => {
+              setVerifyUserTarget(u);
+              setVerifyModalOpen(true);
+            }}
+          />
+        )}
+
+        {/* ========================================================
             TAB 3: DESIGNATION & DEPARTMENT MANAGEMENT (MASTER DATA)
            ======================================================== */}
         {activeTab === "designations" && (
@@ -1281,49 +1741,74 @@ export default function SuperAdminDashboardPage() {
         )}
 
         {/* ========================================================
-            TAB 5: SECURITY & RBAC GUARDRAILS
+            TAB 6: SMART FAQ BOT MANAGEMENT
            ======================================================== */}
-        {activeTab === "security" && (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-              <h2 className="flex items-center text-sm font-bold text-white">
-                <Shield className="mr-2 h-5 w-5 text-emerald-500" />
-                सुरक्षा एवं अभिगम नियंत्रण (RBAC Guardrails)
-              </h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                प्रत्येक API अनुरोध पर सर्वर-साइड सत्र सत्यापन, JWT टोकन हस्ताक्षर एवं 5-भूमिका सुरक्षा नीतियां स्वचालित रूप से लागू की जाती हैं।
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-                <span className="rounded-lg border border-emerald-800 bg-emerald-950 px-3 py-1 text-emerald-300">
-                  HttpOnly Sessions: सक्रिय
-                </span>
-                <span className="rounded-lg border border-emerald-800 bg-emerald-950 px-3 py-1 text-emerald-300">
-                  Scope Filter Isolation: सक्रिय
-                </span>
-                <span className="rounded-lg border border-emerald-800 bg-emerald-950 px-3 py-1 text-emerald-300">
-                  CSV Formula Sanitizer: सक्रिय
-                </span>
-              </div>
-            </div>
+        {activeTab === "bot" && (
+          <FaqManagementTab />
+        )}
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-              <h2 className="flex items-center text-sm font-bold text-white">
-                <Lock className="mr-2 h-5 w-5 text-orange-500" />
-                आंतरिक सुरक्षा दिशानिर्देश (Platform Privacy)
-              </h2>
-              <p className="mt-2 text-xs leading-relaxed text-slate-400">
-                डेटाबेस में आंतरिक स्टाफ टिप्पणियां (Internal Notes) नागरिकों के पोर्टल से पूर्णतः छिपी रहती हैं। सार्वजनिक पंजीकरण केवल CITIZEN भूमिका तक सीमित है।
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-                <span className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-slate-200">
-                  Bcrypt Salt: 10 Rounds
-                </span>
-                <span className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-slate-200">
-                  CAPTCHA दर सीमा: सक्रिय
-                </span>
-                <span className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-slate-200">
-                  No Plaintext Passwords
-                </span>
+        {/* ========================================================
+            TAB 7: ANNOUNCEMENTS MANAGEMENT
+           ======================================================== */}
+        {activeTab === "announcements" && (
+          <AnnouncementsTab />
+        )}
+
+        {/* ========================================================
+            TAB 8: AUDIT LOGS
+           ======================================================== */}
+        {activeTab === "audit" && (
+          <AuditLogsTab />
+        )}
+
+        {/* ========================================================
+            TAB 9: SYSTEM HEALTH, RECOVERY & SECURITY GUARDRAILS
+           ======================================================== */}
+        {(activeTab === "system" || (activeTab as string) === "security") && (
+          <div className="space-y-6">
+            <SystemHealthTab />
+
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+                <h2 className="flex items-center text-sm font-bold text-white">
+                  <Shield className="mr-2 h-5 w-5 text-emerald-500" />
+                  सुरक्षा एवं अभिगम नियंत्रण (RBAC Guardrails)
+                </h2>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  प्रत्येक API अनुरोध पर सर्वर-साइड सत्र सत्यापन, JWT टोकन हस्ताक्षर एवं 5-भूमिका सुरक्षा नीतियां स्वचालित रूप से लागू की जाती हैं।
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+                  <span className="rounded-lg border border-emerald-800 bg-emerald-950 px-3 py-1 text-emerald-300">
+                    HttpOnly Sessions: सक्रिय
+                  </span>
+                  <span className="rounded-lg border border-emerald-800 bg-emerald-950 px-3 py-1 text-emerald-300">
+                    Scope Filter Isolation: सक्रिय
+                  </span>
+                  <span className="rounded-lg border border-emerald-800 bg-emerald-950 px-3 py-1 text-emerald-300">
+                    CSV Formula Sanitizer: सक्रिय
+                  </span>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
+                <h2 className="flex items-center text-sm font-bold text-white">
+                  <Lock className="mr-2 h-5 w-5 text-orange-500" />
+                  आंतरिक सुरक्षा दिशानिर्देश (Platform Privacy)
+                </h2>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">
+                  डेटाबेस में आंतरिक स्टाफ टिप्पणियां (Internal Notes) नागरिकों के पोर्टल से पूर्णतः छिपी रहती हैं। सार्वजनिक पंजीकरण केवल CITIZEN भूमिका तक सीमित है।
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+                  <span className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-slate-200">
+                    Bcrypt Salt: 10 Rounds
+                  </span>
+                  <span className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-slate-200">
+                    CAPTCHA दर सीमा: सक्रिय
+                  </span>
+                  <span className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1 text-slate-200">
+                    No Plaintext Passwords
+                  </span>
+                </div>
               </div>
             </div>
           </div>

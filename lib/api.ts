@@ -245,6 +245,11 @@ export interface AttendanceRecord {
 }
 
 export interface DashboardSummary {
+  systemHealth?: {
+    database: string;
+    apiStatus: string;
+    timestamp: string;
+  };
   complaints: {
     total: number;
     submitted: number;
@@ -252,6 +257,7 @@ export interface DashboardSummary {
     resolved: number;
     rejected: number;
     urgent: number;
+    overdue?: number;
     todayComplaints?: number;
     resolutionRate?: number;
   };
@@ -263,6 +269,27 @@ export interface DashboardSummary {
     politicians?: number;
     superAdmins?: number;
     todayRegistrations?: number;
+    periodRegistrations?: number;
+    active?: number;
+    suspended?: number;
+    deactivated?: number;
+    pending?: number;
+    verified?: number;
+    unverified?: number;
+    pendingReview?: number;
+    rejected?: number;
+    missingDesignation?: number;
+    missingLocation?: number;
+    incompleteContact?: number;
+  };
+  distribution?: {
+    byDesignation: Array<{ title: string; count: number }>;
+    byDistrict: Array<{ district: string; count: number }>;
+    byArea: { rural: number; urban: number };
+  };
+  botStats?: {
+    totalQueries: number;
+    unansweredCount: number;
   };
   tasks: {
     total: number;
@@ -276,7 +303,8 @@ export interface DashboardSummary {
     mobileNumber: string;
     role: "SUPER_ADMIN" | "POLITICIAN" | "PA_STAFF" | "BOOTH_WORKER" | "CITIZEN";
     designation?: string;
-    accountStatus: "ACTIVE" | "SUSPENDED" | "DEACTIVATED";
+    accountStatus: "ACTIVE" | "SUSPENDED" | "DEACTIVATED" | "PENDING";
+    verificationStatus?: string;
     createdAt: string;
   }>;
   recentComplaints?: Array<{
@@ -289,12 +317,68 @@ export interface DashboardSummary {
     citizenId?: { fullName: string; mobileNumber: string };
     createdAt: string;
   }>;
+  recentActivity?: AuditLogItem[];
   trend?: Array<{
     date: string;
-    label: string;
-    count: number;
-    resolved: number;
+    label?: string;
+    registrations?: number;
+    complaints?: number;
+    count?: number;
+    resolved?: number;
   }>;
+}
+
+export interface FaqItem {
+  _id: string;
+  faqId: string;
+  questionHi: string;
+  questionEn: string;
+  answerHi: string;
+  answerEn: string;
+  keywords: string[];
+  alternativePhrases: string[];
+  category: string;
+  sortOrder: number;
+  usageCount: number;
+  isActive: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface BotAskResponse {
+  status: "ANSWERED" | "CLARIFYING" | "UNANSWERED" | "HANDED_OFF";
+  confidence: number;
+  language: "HI" | "EN";
+  answer: string | null;
+  matchedFaq: { faqId: string; question: string; category: string } | null;
+  clarificationOptions: Array<{ faqId: string; question: string; score?: number }>;
+  fallbackSupport: {
+    tawkEnabled: boolean;
+    supportEmail: string;
+    portalHelpline: string;
+  };
+}
+
+export interface BotAnalytics {
+  totalQueries: number;
+  answeredQueries: number;
+  clarifyingQueries: number;
+  unansweredQueries: number;
+  accuracyRate: number;
+  topFaqs: Array<{ faqId: string; questionHi: string; usageCount: number; category: string }>;
+}
+
+export interface AuditLogItem {
+  _id: string;
+  actorId?: { fullName: string; role: string; mobileNumber?: string };
+  userId?: { fullName: string; role: string; mobileNumber?: string };
+  actorRole: string;
+  action: string;
+  resourceType: string;
+  resourceId?: string;
+  ipAddress?: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface NoticeItem {
@@ -667,6 +751,11 @@ export const usersApi = {
       { method: "DELETE" }
     ),
 
+  restore: (id: string) =>
+    request<{ user: UserProfile }>(`/users/${id}/restore`, {
+      method: "PATCH",
+    }),
+
   getExportUrl: (params?: Record<string, string>) => {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
     return `${buildUrl("/users/export")}${qs}`;
@@ -909,18 +998,21 @@ export const directoryApi = {
 // REPORTS & SUMMARY API
 // ==========================================
 export const reportsApi = {
-  getSummary: () => request<DashboardSummary>("/reports/summary"),
+  getSummary: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<DashboardSummary>(`/reports/summary${qs}`);
+  },
 
   getExportUrl: () => `${V1}/reports/export/complaints`,
 };
 
 // ==========================================
-// NOTICES API
+// NOTICES & ANNOUNCEMENTS API
 // ==========================================
 export const noticesApi = {
   getAll: (params?: Record<string, string>) => {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
-    return request<{ notices: NoticeItem[]; pagination: unknown }>(`/notices${qs}`);
+    return request<{ notices: NoticeItem[]; pagination: { total: number; page: number; limit: number; totalPages: number } }>(`/notices${qs}`);
   },
 
   getById: (id: string) => request<NoticeItem>(`/notices/${id}`),
@@ -930,6 +1022,86 @@ export const noticesApi = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+
+  update: (id: string, payload: Record<string, unknown>) =>
+    request<NoticeItem>(`/notices/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  delete: (id: string) =>
+    request(`/notices/${id}`, {
+      method: "DELETE",
+    }),
+};
+
+// ==========================================
+// SMART FAQ BOT & FAQS API
+// ==========================================
+export const botApi = {
+  ask: (query: string, sessionId?: string) =>
+    request<BotAskResponse>("/bot/ask", {
+      method: "POST",
+      body: JSON.stringify({ query, sessionId }),
+    }),
+
+  getPublicFaqs: (category?: string) => {
+    const qs = category && category !== "ALL" ? `?category=${category}` : "";
+    return request<FaqItem[]>(`/bot/faqs${qs}`);
+  },
+};
+
+export const faqsApi = {
+  getAdminFaqs: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{ faqs: FaqItem[]; pagination: { total: number; page: number; limit: number; totalPages: number } }>(`/faqs${qs}`);
+  },
+
+  create: (payload: Partial<FaqItem>) =>
+    request<FaqItem>("/faqs", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  update: (id: string, payload: Partial<FaqItem>) =>
+    request<FaqItem>(`/faqs/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  delete: (id: string) =>
+    request(`/faqs/${id}`, {
+      method: "DELETE",
+    }),
+
+  testMatcher: (query: string) =>
+    request<{
+      status: string;
+      confidence: number;
+      matchedFaq: FaqItem | null;
+      clarificationOptions: Array<{ faqId: string; question: string; score?: number }>;
+      language: string;
+    }>("/faqs/test", {
+      method: "POST",
+      body: JSON.stringify({ query }),
+    }),
+
+  getUnanswered: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{ unanswered: Array<{ _id: string; query: string; detectedLanguage: string; status: string; confidence: number; createdAt: string }>; pagination: { total: number; page: number; limit: number; totalPages: number } }>(`/faqs/unanswered${qs}`);
+  },
+
+  getAnalytics: () => request<BotAnalytics>("/faqs/analytics"),
+};
+
+// ==========================================
+// AUDIT LOGS API
+// ==========================================
+export const auditApi = {
+  getLogs: (params?: Record<string, string>) => {
+    const qs = params ? `?${new URLSearchParams(params).toString()}` : "";
+    return request<{ logs: AuditLogItem[]; pagination: { total: number; page: number; limit: number; totalPages: number } }>(`/audit${qs}`);
+  },
 };
 
 // ==========================================
